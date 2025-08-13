@@ -58,4 +58,20 @@ func main() {
 	// You can now use luaVm to interact with the Lua VM
 	// For example, you might call methods on luaVm.lua
 	// to execute Lua scripts or manipulate Lua state.
+
+	vm, err := vm.CreateLuaVm()
+	if err != nil {
+		fmt.Println("Error creating Lua VM:", err)
+		return
+	}
+	defer vm.Close() // Ensure we close the VM when done
+	fmt.Println("Lua VM created successfully", vm)
+	// Example of creating a Lua string
+	luaString, err := vm.CreateString("Hello, Lua!")
+	if err != nil {
+		fmt.Println("Error creating Lua string:", err)
+		return
+	}
+	fmt.Println("Lua string created successfully:", luaString)
+	luaString.Close() // Clean up the Lua string when done
 }

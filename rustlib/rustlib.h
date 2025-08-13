@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 struct LuaVmWrapper;
 
 struct LuaVmWrapper* newluavm();
@@ -18,3 +19,24 @@ struct IGoCallback {
 
 // Test callbacks
 void test_callback(struct IGoCallback* cb, void* val);
+
+// Represents a result from Rust that can be handled by a C-compatible language.
+// It contains either a value or an error.
+struct GoResult {
+    // A generic pointer to the successful result value.
+    // If this is not NULL, the operation was successful.
+    void* value;
+
+    // A pointer to a null-terminated C string for the error message.
+    // If this is not NULL, the operation failed.
+    char* error;
+};
+
+// Note: only deallocates the `GoResult` struct and error, not the value
+void luago_result_free(struct GoResult* ptr);
+
+// Returns a GoResult[LuaString]
+struct GoResult* luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
+struct LuaString;
+// Free's a LuaString
+void luago_free_string(struct LuaString* ptr);
