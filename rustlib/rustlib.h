@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
+
 struct LuaVmWrapper;
 
 struct LuaVmWrapper* newluavm();
@@ -52,3 +54,55 @@ uintptr_t luago_string_to_pointer(struct LuaString* ptr);
 
 // Free's a LuaString
 void luago_free_string(struct LuaString* ptr);
+
+// GoLuaValue related stuff
+
+typedef enum LuaValueType {
+    LuaValueTypeNil = 0,
+    LuaValueTypeBoolean = 1,
+    LuaValueTypeLightUserData = 2,
+    LuaValueTypeInteger = 3,
+    LuaValueTypeNumber = 4,
+    LuaValueTypeVector = 5,
+    LuaValueTypeString = 6,
+    LuaValueTypeTable = 7,
+    LuaValueTypeFunction = 8,
+    LuaValueTypeThread = 9,
+    LuaValueTypeUserData = 10,
+    LuaValueTypeBuffer = 11,
+    LuaValueTypeError = 12,
+    LuaValueTypeOther = 13
+} LuaValueType;
+
+typedef union LuaValueData {
+    bool boolean;
+    void* light_userdata; // no drop needed for light userdata
+    int64_t integer;
+    double number;
+    float vector[3]; // 3d vector
+    struct LuaString* string; // Pointer to LuaString
+    void* table; // Pointer to LuaTable
+    void* function; // Pointer to LuaFunction
+    void* thread; // Pointer to LuaThread
+    void* userdata; // Pointer to LuaUserData
+    void* buffer; // Pointer to LuaBuffer
+    const char* error; // Pointer to LuaError
+    void* other; // Placeholder for other types
+} LuaValueData;
+
+struct GoLuaValue {
+    // The type of the Lua value
+    LuaValueType tag;
+    // The actual data of the Lua value
+    LuaValueData data;
+};
+
+void luago_error_free(const char* ptr);
+
+struct DebugValue {
+    // Array of two GoLuaValues for debugging purposes
+    struct GoLuaValue values[2];
+};
+
+// Debug API
+struct DebugValue luago_dbg_value(struct LuaVmWrapper* ptr);

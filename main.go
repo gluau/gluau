@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/gluau/gluau/internal/callback" // Import to ensure callback package is initialized
+	ivm "github.com/gluau/gluau/internal/vm"   // Import internal vm package for Lua VM operations
 	"github.com/gluau/gluau/vm"
 )
 
@@ -80,6 +81,9 @@ func main() {
 	fmt.Printf("Lua string pointer: 0x%x\n", luaString.Pointer())
 	luaString.Close() // Clean up the Lua string when done
 	fmt.Println("Lua string as bytes after free (should be empty/nil):", luaString.Bytes())
+	val := vm.DebugValue()
+	fmt.Println("LuaValue:", string(val[0].(*ivm.ValueString).Value.Bytes()))
+	fmt.Println("LuaValue:", string(val[1].(*ivm.ValueError).Value))
 
 	time.Sleep(time.Millisecond)
 }

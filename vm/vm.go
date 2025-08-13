@@ -1,3 +1,4 @@
+// Package vm provides the user-facing API for interacting with the Lua VM.
 package vm
 
 import (
@@ -19,12 +20,17 @@ func (l *Lua) Close() {
 // CreateString creates a Lua string from a Go string
 //
 // The created Lua string is owned by the Lua VM
-func (l *Lua) CreateString(s string) (*vm.LuaString, error) {
+func (l *Lua) CreateString(s string) (*LuaString, error) {
 	result := l.lua.CreateString([]byte(s))
 	if result.Error != "" {
 		return nil, errors.New(result.Error)
 	}
-	return result.Value, nil
+	return &LuaString{ptr: result.Value}, nil
+}
+
+// DebugValue is a testing function to get a debug value from the Lua VM
+func (l *Lua) DebugValue() [2]vm.Value {
+	return l.lua.DebugValue()
 }
 
 func CreateLuaVm() (*Lua, error) {

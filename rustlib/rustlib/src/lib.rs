@@ -1,6 +1,7 @@
 pub mod vm;
 pub mod string;
 pub mod result;
+pub mod value;
 
 use mluau::Lua;
 use std::ffi::c_void;
