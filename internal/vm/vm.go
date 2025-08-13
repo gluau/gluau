@@ -6,6 +6,7 @@ package vm
 */
 import "C"
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -16,10 +17,31 @@ type GoLuaVmWrapper struct {
 	lua *C.struct_LuaVmWrapper
 }
 
+func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
+	res := C.luavm_setmemorylimit(l.lua, C.size_t(limit))
+	var result = GoResultFromC[bool](res)
+	if result.Error != "" {
+		return errors.New(result.Error)
+	}
+	return nil
+}
+
 func (l *GoLuaVmWrapper) CreateString(s []byte) GoResult[LuaString] {
 	res := C.luago_create_string(l.lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	var stringResult = GoResultFromC[C.void](res)
 	return MapResult(stringResult, NewString)
+}
+
+func (l *GoLuaVmWrapper) CreateTable() GoResult[LuaTable] {
+	res := C.luago_create_table(l.lua)
+	var tableResult = GoResultFromC[C.void](res)
+	return MapResult(tableResult, NewTable)
+}
+
+func (l *GoLuaVmWrapper) CreateTableWithCapacity(narr, nrec int) GoResult[LuaTable] {
+	res := C.luago_create_table_with_capacity(l.lua, C.size_t(narr), C.size_t(nrec))
+	var tableResult = GoResultFromC[C.void](res)
+	return MapResult(tableResult, NewTable)
 }
 
 func (l *GoLuaVmWrapper) DebugValue() [3]Value {
@@ -73,24 +95,16 @@ func MapResult[T any, U any](result GoResult[T], mapper func(*T) *U) GoResult[U]
 	return GoResult[U]{Value: mappedValue}
 }
 
-func GoResultFromC[T any](ptr *C.struct_GoResult) GoResult[T] {
-	if ptr == nil {
-		return GoResult[T]{}
-	}
-
+func GoResultFromC[T any](ptr C.struct_GoResult) GoResult[T] {
 	result := GoResult[T]{}
 
 	if ptr.error != nil {
 		result.Error = C.GoString(ptr.error)
+		C.luago_result_error_free(ptr.error) // Free the error string
 	} else if ptr.value != nil {
 		// If there's no error, cast the generic `void*` to the specific `*T`.
 		// This is the only place we need to use `unsafe` logic.
 		result.Value = (*T)(unsafe.Pointer(ptr.value))
 	}
-
-	// Deallocates everything but the Value pointer.
-	//
-	// The error is already copied at this stage anyways
-	C.luago_result_free(ptr)
 	return result
 }

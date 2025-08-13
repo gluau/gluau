@@ -108,4 +108,16 @@ func main() {
 	cBack.Close()
 
 	time.Sleep(time.Millisecond)
+
+	// Create a Lua table
+	if err := vm.SetMemoryLimit(100000000000000); err != nil {
+		panic(fmt.Sprintf("Failed to set memory limit: %v", err))
+	}
+	luaTable, err := vm.CreateTableWithCapacity(100000000, 10)
+	if err != nil {
+		fmt.Println("Error creating Lua table:", err)
+		return
+	}
+	defer luaTable.Close() // Ensure we close the Lua table when done
+	fmt.Println("Lua table created successfully:", luaTable)
 }

@@ -1,5 +1,6 @@
 pub mod vm;
 pub mod string;
+pub mod table;
 pub mod result;
 pub mod value;
 

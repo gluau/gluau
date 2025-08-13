@@ -102,14 +102,14 @@ func (v *ValueString) Close() {
 }
 
 type ValueTable struct {
-	value *C.void // TODO
+	Value *LuaTable
 }
 
 func (v *ValueTable) Type() luaValueType {
 	return luaValueTable
 }
 func (v *ValueTable) Close() {
-	// TODO: Implement table
+	v.Value.Close()
 }
 
 type ValueFunction struct {
@@ -211,9 +211,10 @@ func ValueFromC(item C.struct_GoLuaValue) Value {
 		str := NewString(strPtr)
 		return &ValueString{Value: str}
 	case C.LuaValueTypeTable:
-		tablePtrPtr := (**C.void)(unsafe.Pointer(&item.data))
-		tablePtr := *tablePtrPtr
-		return &ValueTable{value: tablePtr} // TODO: Support tables
+		ptrToPtr := (**C.struct_LuaTable)(unsafe.Pointer(&item.data))
+		tabPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
+		tab := NewTable(tabPtr)
+		return &ValueTable{Value: tab}
 	case C.LuaValueTypeFunction:
 		funcPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
 		funcPtr := *funcPtrPtr
@@ -289,12 +290,12 @@ func DirectValueToC(value Value) (C.struct_GoLuaValue, error) {
 		cVal.tag = C.LuaValueTypeString
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(strVal.Value.ptr)
 	case luaValueTable:
-		tableVal := value.(*ValueTable)
-		if tableVal.value == nil {
+		tabVal := value.(*ValueTable)
+		if tabVal.Value == nil || tabVal.Value.ptr == nil {
 			return cVal, errors.New("cannot convert nil LuaTable to C value")
 		}
-		cVal.tag = C.LuaValueTypeTable
-		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(tableVal.value)
+		cVal.tag = C.LuaValueTypeString
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(tabVal.Value.ptr)
 	case luaValueFunction:
 		funcVal := value.(*ValueFunction)
 		if funcVal.value == nil {

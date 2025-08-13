@@ -5,6 +5,7 @@
 struct LuaVmWrapper;
 
 struct LuaVmWrapper* newluavm();
+struct GoResult luavm_setmemorylimit(struct LuaVmWrapper* ptr, size_t limit);
 void freeluavm(struct LuaVmWrapper* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
@@ -34,11 +35,11 @@ struct GoResult {
     char* error;
 };
 
-// Note: only deallocates the `GoResult` struct and error, not the value
-void luago_result_free(struct GoResult* ptr);
+// Note: only deallocates the `GoResult` error, not the value
+void luago_result_error_free(char* result_error_ptr);
 
 // Returns a GoResult[LuaString]
-struct GoResult* luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
+struct GoResult luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
 struct LuaString;
 
 struct LuaStringBytes {
@@ -51,8 +52,6 @@ struct LuaStringBytes {
 struct LuaStringBytes luago_string_as_bytes(struct LuaString* ptr);
 struct LuaStringBytes luago_string_as_bytes_with_nul(struct LuaString* ptr);
 uintptr_t luago_string_to_pointer(struct LuaString* ptr);
-
-// Free's a LuaString
 void luago_free_string(struct LuaString* ptr);
 
 struct ErrorVariant;
@@ -112,3 +111,9 @@ struct DebugValue {
 
 // Debug API
 struct DebugValue luago_dbg_value(struct LuaVmWrapper* ptr);
+
+// Table API
+struct LuaTable;
+struct GoResult luago_create_table(struct LuaVmWrapper* ptr);
+struct GoResult luago_create_table_with_capacity(struct LuaVmWrapper* ptr, size_t narr, size_t nrec);
+void luago_free_table(struct LuaTable* ptr);

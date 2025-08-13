@@ -5,7 +5,7 @@ use std::ffi::c_char;
 use crate::{result::GoResult, LuaVmWrapper};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> *mut GoResult  {
+pub extern "C" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
     let res = unsafe {
@@ -14,7 +14,7 @@ pub extern "C" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, 
         lua.create_string(slice)
     };
 
-    GoResult::new_ptr(res)
+    GoResult::new(res)
 }
 
 #[repr(C)]
