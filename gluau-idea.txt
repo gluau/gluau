@@ -1,0 +1,1 @@
+Idea: use ``mlua`` crate (or modified mlua later on?) and cgo (https://github.com/arjanvaneersel/go-rust)
