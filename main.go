@@ -74,7 +74,12 @@ func main() {
 		return
 	}
 	fmt.Println("Lua string created successfully:", luaString)
+	fmt.Println("Lua string as bytes:", string(luaString.Bytes()))
+	fmt.Println("Lua string as bytes without nil:", luaString.Bytes())
+	fmt.Println("Lua string as bytes with nil:", luaString.BytesWithNul())
+	fmt.Printf("Lua string pointer: 0x%x\n", luaString.Pointer())
 	luaString.Close() // Clean up the Lua string when done
+	fmt.Println("Lua string as bytes after free (should be empty/nil):", luaString.Bytes())
 
 	time.Sleep(time.Millisecond)
 }

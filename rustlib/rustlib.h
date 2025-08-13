@@ -38,5 +38,17 @@ void luago_result_free(struct GoResult* ptr);
 // Returns a GoResult[LuaString]
 struct GoResult* luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
 struct LuaString;
+
+struct LuaStringBytes {
+    // Pointer to the string data
+    const char* data;
+    // Length of the string data
+    size_t len;
+};
+
+struct LuaStringBytes luago_string_as_bytes(struct LuaString* ptr);
+struct LuaStringBytes luago_string_as_bytes_with_nul(struct LuaString* ptr);
+uintptr_t luago_string_to_pointer(struct LuaString* ptr);
+
 // Free's a LuaString
 void luago_free_string(struct LuaString* ptr);

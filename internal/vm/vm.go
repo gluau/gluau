@@ -21,6 +21,41 @@ type LuaString struct {
 	ptr *C.void
 }
 
+// Returns the LuaString as a byte slice
+func (l *LuaString) Bytes() []byte {
+	if l.ptr == nil {
+		return nil
+	}
+
+	data := C.luago_string_as_bytes((*C.struct_LuaString)(unsafe.Pointer(l.ptr)))
+	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
+	return goSlice
+}
+
+// Returns the LuaString as a byte slice with nul terminator
+func (l *LuaString) BytesWithNul() []byte {
+	if l.ptr == nil {
+		return nil
+	}
+
+	data := C.luago_string_as_bytes_with_nul((*C.struct_LuaString)(unsafe.Pointer(l.ptr)))
+	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
+	return goSlice
+}
+
+// Returns a 'pointer' to a LuaString
+//
+// Note: this pointer is only useful for hashing and debugging and you cannot
+// get back a LuaString from it.
+func (l *LuaString) Pointer() uint64 {
+	if l.ptr == nil {
+		return 0
+	}
+
+	ptr := C.luago_string_to_pointer((*C.struct_LuaString)(unsafe.Pointer(l.ptr)))
+	return uint64(ptr)
+}
+
 // Closes the Lua string object and frees its memory.
 func (l *LuaString) Close() {
 	if l.ptr == nil {
