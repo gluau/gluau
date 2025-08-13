@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"github.com/gluau/gluau/internal/callback" // Import to ensure callback package is initialized
@@ -74,4 +75,6 @@ func main() {
 	}
 	fmt.Println("Lua string created successfully:", luaString)
 	luaString.Close() // Clean up the Lua string when done
+
+	time.Sleep(time.Millisecond)
 }
