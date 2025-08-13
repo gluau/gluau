@@ -83,7 +83,7 @@ func main() {
 	fmt.Println("Lua string as bytes after free (should be empty/nil):", luaString.Bytes())
 	val := vm.DebugValue()
 	fmt.Println("LuaValue:", string(val[0].(*ivm.ValueString).Value.Bytes()))
-	fmt.Println("LuaValue:", string(val[1].(*ivm.ValueError).Value))
+	fmt.Println("LuaValue:", string(val[1].(*ivm.ValueError).Value.Bytes()))
 
 	time.Sleep(time.Millisecond)
 }

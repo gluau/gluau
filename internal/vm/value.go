@@ -3,9 +3,13 @@ package vm
 /*
 #cgo LDFLAGS: -L../../rustlib -lrustlib
 #include "../../rustlib/rustlib.h"
+#include <stdlib.h>
 */
 import "C"
-import "unsafe"
+import (
+	"errors"
+	"unsafe"
+)
 
 type luaValueType int
 
@@ -153,13 +157,15 @@ func (v *ValueBuffer) Close() {
 }
 
 type ValueError struct {
-	Value string
+	Value *ErrorVariant
 }
 
 func (v *ValueError) Type() luaValueType {
 	return luaValueError
 }
-func (v *ValueError) Close() {}
+func (v *ValueError) Close() {
+	v.Value.Close()
+}
 
 type ValueOther struct {
 	value *C.void // TODO
@@ -170,6 +176,7 @@ func (v *ValueOther) Type() luaValueType {
 }
 func (v *ValueOther) Close() {}
 
+// ValueFromC converts a C struct_GoLuaValue to a Go Value interface.
 func ValueFromC(item C.struct_GoLuaValue) Value {
 	switch item.tag {
 	case C.LuaValueTypeNil:
@@ -216,10 +223,10 @@ func ValueFromC(item C.struct_GoLuaValue) Value {
 		bufferPtr := *bufferPtrPtr
 		return &ValueBuffer{value: bufferPtr} // TODO: Support buffers
 	case C.LuaValueTypeError:
-		errorPtr := *(**C.char)(unsafe.Pointer(&item.data))
-		errStr := C.GoString(errorPtr)
-		C.luago_error_free(errorPtr)      // Free the C string memory
-		return &ValueError{Value: errStr} // Return the error as a Go string
+		ptrToPtr := (**C.struct_ErrorVariant)(unsafe.Pointer(&item.data))
+		strPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
+		str := NewErrorVariant(strPtr)
+		return &ValueError{Value: str}
 	case C.LuaValueTypeOther:
 		// Currently, always nil
 		return &ValueOther{value: nil} // TODO: Support other types
@@ -227,4 +234,93 @@ func ValueFromC(item C.struct_GoLuaValue) Value {
 		// Unknown type, return as Other
 		return &ValueOther{value: nil} // Return nil for unknown types (as we cannot safely handle them)
 	}
+}
+
+// ValueToC converts a Go Value interface to a C struct_GoLuaValue
+// with the intent that the value will be passed to Rust code
+//
+// Internal API: do not use unless you know what you're doing
+func ValueToC(value Value) (C.struct_GoLuaValue, error) {
+	var cVal C.struct_GoLuaValue
+	switch value.Type() {
+	case luaValueNil:
+		break
+	case luaValueBoolean:
+		boolVal := value.(*ValueBoolean)
+		cVal.tag = C.LuaValueTypeBoolean
+		*(*C.bool)(unsafe.Pointer(&cVal.data)) = C.bool(boolVal.Value)
+	case luaValueLightUserData:
+		lightUserDataVal := value.(*ValueLightUserData)
+		cVal.tag = C.LuaValueTypeLightUserData
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = lightUserDataVal.Value
+	case luaValueInteger:
+		intVal := value.(*ValueInteger)
+		cVal.tag = C.LuaValueTypeInteger
+		*(*int64)(unsafe.Pointer(&cVal.data)) = intVal.Value
+	case luaValueNumber:
+		numVal := value.(*ValueNumber)
+		cVal.tag = C.LuaValueTypeNumber
+		*(*float64)(unsafe.Pointer(&cVal.data)) = numVal.Value
+	case luaValueVector:
+		cVal.tag = C.LuaValueTypeVector
+		vecVal := value.(*ValueVector)
+		*(*[3]float32)(unsafe.Pointer(&cVal.data)) = vecVal.Value
+	case luaValueString:
+		strVal := value.(*ValueString)
+		if strVal.Value == nil || strVal.Value.ptr == nil {
+			return cVal, errors.New("cannot convert nil LuaString to C value")
+		}
+		cVal.tag = C.LuaValueTypeString
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(strVal.Value.ptr)
+	case luaValueTable:
+		tableVal := value.(*ValueTable)
+		if tableVal.value == nil {
+			return cVal, errors.New("cannot convert nil LuaTable to C value")
+		}
+		cVal.tag = C.LuaValueTypeTable
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(tableVal.value)
+	case luaValueFunction:
+		funcVal := value.(*ValueFunction)
+		if funcVal.value == nil {
+			return cVal, errors.New("cannot convert nil LuaFunction to C value")
+		}
+		cVal.tag = C.LuaValueTypeFunction
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(funcVal.value)
+	case luaValueThread:
+		threadVal := value.(*ValueThread)
+		if threadVal.value == nil {
+			return cVal, errors.New("cannot convert nil LuaThread to C value")
+		}
+		cVal.tag = C.LuaValueTypeThread
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(threadVal.value)
+	case luaValueUserData:
+		userDataVal := value.(*ValueUserData)
+		if userDataVal.value == nil {
+			return cVal, errors.New("cannot convert nil LuaUserData to C value")
+		}
+		cVal.tag = C.LuaValueTypeUserData
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(userDataVal.value)
+	case luaValueBuffer:
+		bufferVal := value.(*ValueBuffer)
+		if bufferVal.value == nil {
+			return cVal, errors.New("cannot convert nil LuaBuffer to C value")
+		}
+		cVal.tag = C.LuaValueTypeBuffer
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(bufferVal.value)
+	case luaValueError:
+		errVal := value.(*ValueError)
+		if errVal.Value == nil || errVal.Value.ptr == nil {
+			return cVal, errors.New("cannot convert nil ErrorVariant to C value")
+		}
+		cVal.tag = C.LuaValueTypeError
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(errVal.Value.ptr)
+	case luaValueOther:
+		// Currently, always nil
+		cVal.tag = C.LuaValueTypeOther
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = nil // Return nil
+	default:
+		return cVal, errors.New("unknown Lua value type")
+	}
+
+	return cVal, nil
 }

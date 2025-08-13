@@ -55,6 +55,8 @@ uintptr_t luago_string_to_pointer(struct LuaString* ptr);
 // Free's a LuaString
 void luago_free_string(struct LuaString* ptr);
 
+struct ErrorVariant;
+
 // GoLuaValue related stuff
 
 typedef enum LuaValueType {
@@ -86,18 +88,20 @@ typedef union LuaValueData {
     void* thread; // Pointer to LuaThread
     void* userdata; // Pointer to LuaUserData
     void* buffer; // Pointer to LuaBuffer
-    const char* error; // Pointer to LuaError
+    struct ErrorVariant* error; // Pointer to LuaError
     void* other; // Placeholder for other types
 } LuaValueData;
 
 struct GoLuaValue {
     // The type of the Lua value
     LuaValueType tag;
-    // The actual data of the Lua value
+    // The actual data of the Lua value 
     LuaValueData data;
 };
 
-void luago_error_free(const char* ptr);
+struct ErrorVariant* luago_error_new(const char* str, size_t len);
+struct LuaStringBytes luago_error_get_string(struct ErrorVariant* ptr);
+void luago_error_free(struct ErrorVariant* ptr);
 
 struct DebugValue {
     // Array of two GoLuaValues for debugging purposes

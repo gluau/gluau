@@ -20,9 +20,9 @@ pub extern "C" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, 
 #[repr(C)]
 pub struct LuaStringBytes {
     // Pointer to the string data
-    data: *const u8,
+    pub data: *const u8,
     // Length of the string data
-    size: usize,
+    pub size: usize,
 }
 
 #[unsafe(no_mangle)]
