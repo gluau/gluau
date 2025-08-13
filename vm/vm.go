@@ -29,7 +29,7 @@ func (l *Lua) CreateString(s string) (*LuaString, error) {
 }
 
 // DebugValue is a testing function to get a debug value from the Lua VM
-func (l *Lua) DebugValue() [2]vm.Value {
+func (l *Lua) DebugValue() [3]vm.Value {
 	return l.lua.DebugValue()
 }
 

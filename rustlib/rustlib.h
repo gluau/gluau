@@ -99,13 +99,15 @@ struct GoLuaValue {
     LuaValueData data;
 };
 
+struct GoLuaValue luago_value_clone(struct GoLuaValue value);
+
 struct ErrorVariant* luago_error_new(const char* str, size_t len);
 struct LuaStringBytes luago_error_get_string(struct ErrorVariant* ptr);
 void luago_error_free(struct ErrorVariant* ptr);
 
 struct DebugValue {
     // Array of two GoLuaValues for debugging purposes
-    struct GoLuaValue values[2];
+    struct GoLuaValue values[3];
 };
 
 // Debug API

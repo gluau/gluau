@@ -54,7 +54,7 @@ func main() {
 		createVm()
 		runtime.GC() // Force garbage collection to test finalizers are called
 	}
-	runtime.GC() // Force garbage collection to test finalizers are called
+
 	//defer luaVm.Drop() // Ensure we free the Lua VM when done
 
 	// You can now use luaVm to interact with the Lua VM
@@ -81,9 +81,31 @@ func main() {
 	fmt.Printf("Lua string pointer: 0x%x\n", luaString.Pointer())
 	luaString.Close() // Clean up the Lua string when done
 	fmt.Println("Lua string as bytes after free (should be empty/nil):", luaString.Bytes())
+
+	// Debug test
 	val := vm.DebugValue()
 	fmt.Println("LuaValue:", string(val[0].(*ivm.ValueString).Value.Bytes()))
 	fmt.Println("LuaValue:", string(val[1].(*ivm.ValueError).Value.Bytes()))
+	fmt.Println("LuaValue:", val[2].(*ivm.ValueInteger).Value)
+	a, _ := ivm.ValueToC(val[0]) // Convert LuaValue to C pointer and clone it
+	b, _ := ivm.ValueToC(val[1]) // Convert LuaValue to C pointer and clone it
+	c, _ := ivm.ValueToC(val[2]) // Convert LuaValue to C pointer and clone it
+	fmt.Println("LuaValue C pointer:", a, b, c)
+	aBack := ivm.ValueFromC(a)
+	bBack := ivm.ValueFromC(b)
+	cBack := ivm.ValueFromC(c)
+	fmt.Println("LuaValue C back:", aBack, bBack, cBack)
+	fmt.Println("LuaValue C back as string:", string(aBack.(*ivm.ValueString).Value.Bytes()))
+	fmt.Println("LuaValue C back as error:", string(bBack.(*ivm.ValueError).Value.Bytes()))
+	fmt.Println("LuaValue C back as integer:", cBack.(*ivm.ValueInteger).Value)
+
+	// IMPORTANT
+	val[0].Close()
+	val[1].Close()
+	val[2].Close()
+	aBack.Close()
+	bBack.Close()
+	cBack.Close()
 
 	time.Sleep(time.Millisecond)
 }

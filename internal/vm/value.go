@@ -176,7 +176,15 @@ func (v *ValueOther) Type() luaValueType {
 }
 func (v *ValueOther) Close() {}
 
+// CloneValue clones a C struct_GoLuaValue to a new C struct_GoLuaValue.
+func CloneValue(item C.struct_GoLuaValue) C.struct_GoLuaValue {
+	return C.luago_value_clone(item)
+}
+
 // ValueFromC converts a C struct_GoLuaValue to a Go Value interface.
+// Note: this does not clone the value, it simply converts it.
+//
+// Internal API: do not use unless you know what you're doing
 func ValueFromC(item C.struct_GoLuaValue) Value {
 	switch item.tag {
 	case C.LuaValueTypeNil:
@@ -236,11 +244,19 @@ func ValueFromC(item C.struct_GoLuaValue) Value {
 	}
 }
 
-// ValueToC converts a Go Value interface to a C struct_GoLuaValue
-// with the intent that the value will be passed to Rust code
+// DirectValueToC converts a Go Value interface to a C struct_GoLuaValue
+// with the intent that the value will be passed to Rust code.
+// Note: this does not clone the value, it simply converts it.
 //
 // Internal API: do not use unless you know what you're doing
-func ValueToC(value Value) (C.struct_GoLuaValue, error) {
+//
+// # WARNING
+//
+// You probably want to use ValueToC instead of this function.
+//
+// In particular, ValueFromC should *never* be called directly on the result of this function,
+// as it may lead to memory corruption or undefined behavior.
+func DirectValueToC(value Value) (C.struct_GoLuaValue, error) {
 	var cVal C.struct_GoLuaValue
 	switch value.Type() {
 	case luaValueNil:
@@ -323,4 +339,20 @@ func ValueToC(value Value) (C.struct_GoLuaValue, error) {
 	}
 
 	return cVal, nil
+}
+
+// ValueToC converts a Go Value interface to a C struct_GoLuaValue
+// with the intent that the value will be passed to Rust code.
+// It clones the value ref pointer to ensure it is safe to use in C code.
+//
+// Internal API: do not use unless you know what you're doing
+func ValueToC(value Value) (C.struct_GoLuaValue, error) {
+	if value == nil {
+		return C.struct_GoLuaValue{}, errors.New("cannot convert nil value to C")
+	}
+	cptr, err := DirectValueToC(value)
+	if err != nil {
+		return cptr, err
+	}
+	return CloneValue(cptr), nil
 }

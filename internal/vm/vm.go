@@ -22,9 +22,9 @@ func (l *GoLuaVmWrapper) CreateString(s []byte) GoResult[LuaString] {
 	return MapResult(stringResult, NewString)
 }
 
-func (l *GoLuaVmWrapper) DebugValue() [2]Value {
+func (l *GoLuaVmWrapper) DebugValue() [3]Value {
 	v := C.luago_dbg_value(l.lua)
-	values := [2]Value{}
+	values := [3]Value{}
 	for i, v := range v.values {
 		values[i] = ValueFromC(v)
 	}
