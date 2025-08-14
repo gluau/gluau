@@ -40,26 +40,26 @@ func (l *LuaTable) Clear() error {
 }
 
 // ContainsKey checks if the LuaTable contains a key
-func (l *LuaTable) ContainsKey(key Value) error {
+func (l *LuaTable) ContainsKey(key Value) (bool, error) {
 	l.RLock()
 	defer l.RUnlock()
 
 	ptr, err := l.object.PointerNoLock()
 	if err != nil {
-		return err // Return error if the object is closed
+		return false, err // Return error if the object is closed
 	}
 	keyVal, err := valueToC(key)
 	if err != nil {
-		return err // Return error if the value cannot be converted
+		return false, err // Return error if the value cannot be converted
 	}
 
 	res := C.luago_table_contains_key((*C.struct_LuaTable)(unsafe.Pointer(ptr)), keyVal)
 
 	var result = goResultFromC[bool](res)
 	if result.Error != "" {
-		return errors.New(result.Error)
+		return false, errors.New(result.Error)
 	}
-	return nil
+	return *result.Value, nil
 }
 
 func (l *LuaTable) Close() {

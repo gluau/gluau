@@ -83,9 +83,9 @@ func main() {
 
 	// Debug test
 	val := vm.DebugValue()
-	fmt.Println("LuaValue:", string(val[0].(*vmlib.ValueString).Value.Bytes()))
-	fmt.Println("LuaValue:", string(val[1].(*vmlib.ValueError).Value.Bytes()))
-	fmt.Println("LuaValue:", val[2].(*vmlib.ValueInteger).Value)
+	fmt.Println("LuaValue:", string(val[0].(*vmlib.ValueString).Value().Bytes()))
+	fmt.Println("LuaValue:", string(val[1].(*vmlib.ValueError).Value().Bytes()))
+	fmt.Println("LuaValue:", val[2].(*vmlib.ValueInteger).Value())
 
 	// IMPORTANT
 	val[0].Close()
@@ -128,4 +128,17 @@ func main() {
 	if err := luaTable2.Clear(); err != nil {
 		panic(fmt.Sprintf("Failed to clear Lua table: %v", err))
 	}
+	fooStr, err := vm.CreateString("foo")
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua string: %v", err))
+	}
+	defer fooStr.Close() // Ensure we close the Lua string when done
+	containsKey, err := luaTable2.ContainsKey(fooStr.ToValue())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to check if Lua table contains key: %v", err))
+	}
+	if containsKey {
+		panic("Lua table should not contain 'foo' key")
+	}
+	fmt.Println("empty table contains 'foo'", containsKey)
 }

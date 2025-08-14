@@ -47,7 +47,10 @@ func (l *LuaString) BytesWithNul() []byte {
 	return goSlice
 }
 
-// Returns a 'pointer' to a LuaString
+// Returns a 'pointer' to a Lua-owned string
+//
+// This pointer is only useful for hashing/debugging
+// and cannot be converted back to the original Lua string object.
 func (l *LuaString) Pointer() uint64 {
 	l.object.RLock()
 	defer l.object.RUnlock()
@@ -60,9 +63,15 @@ func (l *LuaString) Pointer() uint64 {
 	return uint64(ptr)
 }
 
+// String returns the LuaString as a Go string.
 func (l *LuaString) String() string {
 	// Convert the LuaString to a Go string
 	return string(l.Bytes())
+}
+
+// ToValue converts the LuaString to a Value.
+func (l *LuaString) ToValue() Value {
+	return &ValueString{value: l}
 }
 
 func (l *LuaString) Close() {
