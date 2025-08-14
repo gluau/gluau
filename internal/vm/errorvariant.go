@@ -6,7 +6,6 @@ import (
 )
 
 /*
-#cgo LDFLAGS: -L../../rustlib -lrustlib
 #include "../../rustlib/rustlib.h"
 */
 import "C"

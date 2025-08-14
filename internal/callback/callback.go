@@ -6,7 +6,6 @@ import (
 )
 
 /*
-#cgo LDFLAGS: -L../../rustlib -lrustlib
 #include "../../rustlib/rustlib.h"
 
 void GoCallbackTrampoline(void* val, void* handle);

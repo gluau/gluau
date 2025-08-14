@@ -1,7 +1,6 @@
 package vm
 
 /*
-#cgo LDFLAGS: -L../../rustlib -lrustlib
 #include "../../rustlib/rustlib.h"
 #include <stdlib.h>
 */
@@ -208,12 +207,12 @@ func ValueFromC(item C.struct_GoLuaValue) Value {
 	case C.LuaValueTypeString:
 		ptrToPtr := (**C.struct_LuaString)(unsafe.Pointer(&item.data))
 		strPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		str := NewString(strPtr)
+		str := &LuaString{object: NewObject(strPtr, stringTab)}
 		return &ValueString{Value: str}
 	case C.LuaValueTypeTable:
 		ptrToPtr := (**C.struct_LuaTable)(unsafe.Pointer(&item.data))
 		tabPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		tab := NewTable(tabPtr)
+		tab := &LuaTable{object: NewObject(tabPtr, tableTab)}
 		return &ValueTable{Value: tab}
 	case C.LuaValueTypeFunction:
 		funcPtrPtr := (**C.void)(unsafe.Pointer(&item.data))

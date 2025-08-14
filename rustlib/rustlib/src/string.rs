@@ -8,9 +8,13 @@ use crate::{result::GoResult, LuaVmWrapper};
 pub extern "C" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
-    let res = unsafe {
-        let lua = &mut (*ptr).lua;
-        let slice = std::slice::from_raw_parts(s as *const u8, len);
+    let lua = unsafe { &(*ptr).lua };
+
+    let res = if s.is_null() {
+        // Create an empty string if the pointer is null.
+        lua.create_string("")
+    } else {
+        let slice = unsafe { std::slice::from_raw_parts(s as *const u8, len) };
         lua.create_string(slice)
     };
 

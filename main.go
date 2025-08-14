@@ -109,6 +109,18 @@ func main() {
 
 	time.Sleep(time.Millisecond)
 
+	luaEmptyString, err := vm.CreateString("")
+	if err != nil {
+		fmt.Println("Error creating Lua string:", err)
+		return
+	}
+	fmt.Println("Lua empty string created successfully:", luaEmptyString)
+	fmt.Println("Lua empty string as bytes:", luaEmptyString.Bytes())
+	fmt.Println("Lua empty string as bytes with nil:", luaEmptyString.BytesWithNul())
+	fmt.Printf("Lua empty string pointer: 0x%x\n", luaEmptyString.Pointer())
+	luaEmptyString.Close() // Clean up the Lua empty string when done
+	fmt.Println("Lua empty string as bytes after free (should be empty/nil):", luaEmptyString.Bytes())
+
 	// Create a Lua table
 	if err := vm.SetMemoryLimit(100000000000000); err != nil {
 		panic(fmt.Sprintf("Failed to set memory limit: %v", err))

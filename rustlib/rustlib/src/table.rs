@@ -5,7 +5,7 @@ pub extern "C" fn luago_create_table(ptr: *mut LuaVmWrapper) -> GoResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
     let res = unsafe {
-        let lua = &mut (*ptr).lua;
+        let lua = &(*ptr).lua;
         lua.create_table()
     };
 
@@ -17,7 +17,7 @@ pub extern "C" fn luago_create_table_with_capacity(ptr: *mut LuaVmWrapper, narr:
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
     let res = unsafe {
-        let lua = &mut (*ptr).lua;
+        let lua = &(*ptr).lua;
         lua.create_table_with_capacity(narr, nrec)
     };
 

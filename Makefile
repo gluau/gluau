@@ -2,14 +2,14 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 clean:
 	rm -rf ./rustlib/rustlib/target
-	rm ./rustlib/librustlib.so go-rust
+	rm ./rustlib/librustlib.a go-rust
 
 library:
 	$(MAKE) -C rustlib/rustlib build
+	cp target/release/librustlib.a rustlib/librustlib.a
 
 build:
-	cp target/release/librustlib.so ./rustlib
-	go build -ldflags="-r $(ROOT_DIR)rustlib" -o go-rust
+	go build -o go-rust
 
 all: library build
 

@@ -22,7 +22,7 @@ pub extern "C" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> 
     if ptr.is_null() {
         return GoResult::from_error(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
     }
-    let lua = unsafe { &mut (*ptr).lua };
+    let lua = unsafe { &(*ptr).lua };
     match lua.set_memory_limit(limit) {
         Ok(_) => GoResult::from_value(true),
         Err(err) => GoResult::from_error(err),

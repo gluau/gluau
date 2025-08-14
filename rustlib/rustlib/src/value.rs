@@ -487,7 +487,7 @@ pub extern "C" fn luago_dbg_value(ptr: *mut LuaVmWrapper) -> DebugValue {
         // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
     let res = unsafe {
-        let lua = &mut (*ptr).lua;
+        let lua = &(*ptr).lua;
         lua.create_string("Testing testing 123").unwrap()
     };
 

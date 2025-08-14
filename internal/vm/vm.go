@@ -1,24 +1,40 @@
 package vm
 
 /*
-#cgo LDFLAGS: -L../../rustlib -lrustlib
 #include "../../rustlib/rustlib.h"
 */
 import "C"
 import (
 	"errors"
 	"fmt"
-	"runtime"
 	"unsafe"
 )
 
+var luaVmTab = objectTab{
+	dtor: func(ptr *C.void) {
+		C.freeluavm((*C.struct_LuaVmWrapper)(unsafe.Pointer(ptr)))
+	},
+}
+
 // Internal VM wrapper
 type GoLuaVmWrapper struct {
-	lua *C.struct_LuaVmWrapper
+	*object
+}
+
+func (l *GoLuaVmWrapper) lua() (*C.struct_LuaVmWrapper, error) {
+	ptr, err := l.object.Pointer()
+	if err != nil {
+		return nil, err // Return error if the object is closed
+	}
+	return (*C.struct_LuaVmWrapper)(unsafe.Pointer(ptr)), nil
 }
 
 func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
-	res := C.luavm_setmemorylimit(l.lua, C.size_t(limit))
+	lua, err := l.lua()
+	if err != nil {
+		return err
+	}
+	res := C.luavm_setmemorylimit(lua, C.size_t(limit))
 	var result = GoResultFromC[bool](res)
 	if result.Error != "" {
 		return errors.New(result.Error)
@@ -27,25 +43,60 @@ func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
 }
 
 func (l *GoLuaVmWrapper) CreateString(s []byte) GoResult[LuaString] {
-	res := C.luago_create_string(l.lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
+	lua, err := l.lua()
+	if err != nil {
+		return GoResult[LuaString]{Error: err.Error()}
+	}
+
+	if len(s) == 0 {
+		// Passing nil to luago_create_string creates an empty string.
+		res := C.luago_create_string(lua, (*C.char)(nil), C.size_t(len(s)))
+		var stringResult = GoResultFromC[C.void](res)
+		return MapResult(stringResult, func(t *C.void) *LuaString {
+			return &LuaString{object: NewObject(t, stringTab)}
+		})
+	}
+
+	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	var stringResult = GoResultFromC[C.void](res)
-	return MapResult(stringResult, NewString)
+	return MapResult(stringResult, func(t *C.void) *LuaString {
+		return &LuaString{object: NewObject(t, stringTab)}
+	})
 }
 
 func (l *GoLuaVmWrapper) CreateTable() GoResult[LuaTable] {
-	res := C.luago_create_table(l.lua)
+	lua, err := l.lua()
+	if err != nil {
+		return GoResult[LuaTable]{Error: err.Error()}
+	}
+
+	res := C.luago_create_table(lua)
 	var tableResult = GoResultFromC[C.void](res)
-	return MapResult(tableResult, NewTable)
+	return MapResult(tableResult, func(t *C.void) *LuaTable {
+		return &LuaTable{object: NewObject(t, tableTab)}
+	})
 }
 
 func (l *GoLuaVmWrapper) CreateTableWithCapacity(narr, nrec int) GoResult[LuaTable] {
-	res := C.luago_create_table_with_capacity(l.lua, C.size_t(narr), C.size_t(nrec))
+	lua, err := l.lua()
+	if err != nil {
+		return GoResult[LuaTable]{Error: err.Error()}
+	}
+
+	res := C.luago_create_table_with_capacity(lua, C.size_t(narr), C.size_t(nrec))
 	var tableResult = GoResultFromC[C.void](res)
-	return MapResult(tableResult, NewTable)
+	return MapResult(tableResult, func(t *C.void) *LuaTable {
+		return &LuaTable{object: NewObject(t, tableTab)}
+	})
 }
 
 func (l *GoLuaVmWrapper) DebugValue() [3]Value {
-	v := C.luago_dbg_value(l.lua)
+	lua, err := l.lua()
+	if err != nil {
+		panic(err.Error()) // This should not happen in normal operation
+	}
+
+	v := C.luago_dbg_value(lua)
 	values := [3]Value{}
 	for i, v := range v.values {
 		values[i] = ValueFromC(v)
@@ -53,26 +104,12 @@ func (l *GoLuaVmWrapper) DebugValue() [3]Value {
 	return values
 }
 
-// Close cleans up the Lua VM
-func (l *GoLuaVmWrapper) Close() {
-	if l.lua == nil {
-		return
-	}
-
-	fmt.Println("Closing Lua VM")
-
-	C.freeluavm(l.lua)
-	l.lua = nil                  // Prevent double free
-	runtime.SetFinalizer(l, nil) // Remove finalizer to prevent double calls
-}
-
 func CreateLuaVm() (*GoLuaVmWrapper, error) {
 	ptr := C.newluavm()
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create Lua VM")
 	}
-	vm := &GoLuaVmWrapper{lua: ptr}
-	runtime.SetFinalizer(vm, (*GoLuaVmWrapper).Close)
+	vm := &GoLuaVmWrapper{object: NewObject((*C.void)(unsafe.Pointer(ptr)), luaVmTab)}
 	return vm, nil
 }
 
