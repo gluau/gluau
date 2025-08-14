@@ -5,7 +5,6 @@ package vm
 */
 import "C"
 import (
-	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -43,9 +42,8 @@ func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
 		return err
 	}
 	res := C.luavm_setmemorylimit(lua, C.size_t(limit))
-	var result = goResultFromC[bool](res)
-	if result.Error != "" {
-		return errors.New(result.Error)
+	if res.error != nil {
+		return moveErrorToGoError(res.error)
 	}
 	return nil
 }
@@ -73,25 +71,17 @@ func (l *GoLuaVmWrapper) createString(s []byte) (*LuaString, error) {
 	if len(s) == 0 {
 		// Passing nil to luago_create_string creates an empty string.
 		res := C.luago_create_string(lua, (*C.char)(nil), C.size_t(len(s)))
-		var stringResult = goResultFromC[C.void](res)
-		if stringResult.Error != "" {
-			return nil, errors.New(stringResult.Error)
-		} else if stringResult.Value == nil {
-			return nil, errors.New("failed to create Lua string")
-		} else {
-			return &LuaString{object: newObject(stringResult.Value, stringTab)}, nil
+		if res.error != nil {
+			return nil, moveErrorToGoError(res.error)
 		}
+		return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab)}, nil
 	}
 
 	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
-	var stringResult = goResultFromC[C.void](res)
-	if stringResult.Error != "" {
-		return nil, errors.New(stringResult.Error)
-	} else if stringResult.Value == nil {
-		return nil, errors.New("failed to create Lua string")
-	} else {
-		return &LuaString{object: newObject(stringResult.Value, stringTab)}, nil
+	if res.error != nil {
+		return nil, moveErrorToGoError(res.error)
 	}
+	return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab)}, nil
 }
 
 // CreateTable creates a new Lua table.
@@ -105,14 +95,10 @@ func (l *GoLuaVmWrapper) CreateTable() (*LuaTable, error) {
 	}
 
 	res := C.luago_create_table(lua)
-	var tableResult = goResultFromC[C.void](res)
-	if tableResult.Error != "" {
-		return nil, errors.New(tableResult.Error)
-	} else if tableResult.Value == nil {
-		return nil, errors.New("failed to create Lua table")
-	} else {
-		return &LuaTable{object: newObject(tableResult.Value, tableTab)}, nil
+	if res.error != nil {
+		return nil, moveErrorToGoError(res.error)
 	}
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab)}, nil
 }
 
 // CreateTableWithCapacity creates a new Lua table with specified capacity for array and record parts.
@@ -127,17 +113,34 @@ func (l *GoLuaVmWrapper) CreateTableWithCapacity(narr, nrec int) (*LuaTable, err
 	}
 
 	res := C.luago_create_table_with_capacity(lua, C.size_t(narr), C.size_t(nrec))
-	var tableResult = goResultFromC[C.void](res)
-	if tableResult.Error != "" {
-		return nil, errors.New(tableResult.Error)
-	} else if tableResult.Value == nil {
-		return nil, errors.New("failed to create Lua table with capacity")
-	} else {
-		return &LuaTable{object: newObject(tableResult.Value, tableTab)}, nil
+	if res.error != nil {
+		return nil, moveErrorToGoError(res.error)
+	}
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab)}, nil
+}
+
+// CreateErrorVariant creates a new ErrorVariant from a byte slice.
+func CreateErrorVariant(s []byte) *ErrorVariant {
+	res := newErrorVariantC(s) // Make a new ErrorVariant C struct
+	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
+}
+
+func newErrorVariantC(s []byte) *C.struct_ErrorVariant {
+	if len(s) == 0 {
+		// Passing nil to luago_create_string creates an empty string.
+		return C.luago_error_new((*C.char)(nil), C.size_t(len(s)))
+	}
+
+	return C.luago_error_new((*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
+}
+
+func freeErrorVariantC(ptr *C.struct_ErrorVariant) {
+	if ptr != nil {
+		C.luago_error_free(ptr) // Free the C struct
 	}
 }
 
-func (l *GoLuaVmWrapper) DebugValue() [3]Value {
+func (l *GoLuaVmWrapper) DebugValue() [4]Value {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -147,7 +150,7 @@ func (l *GoLuaVmWrapper) DebugValue() [3]Value {
 	}
 
 	v := C.luago_dbg_value(lua)
-	values := [3]Value{}
+	values := [4]Value{}
 	for i, v := range v.values {
 		values[i] = valueFromC(v)
 	}
@@ -170,26 +173,4 @@ func CreateLuaVm() (*GoLuaVmWrapper, error) {
 	}
 	vm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(ptr)), luaVmTab)}
 	return vm, nil
-}
-
-// GoResult provides both the value and a error string returned by Lua.
-//
-// This is a internal structure and should *not* be used directly.
-type goResult[T any] struct {
-	Value *T
-	Error string
-}
-
-func goResultFromC[T any](ptr C.struct_GoResult) goResult[T] {
-	result := goResult[T]{}
-
-	if ptr.error != nil {
-		result.Error = C.GoString(ptr.error)
-		C.luago_result_error_free(ptr.error) // Free the error string
-	} else if ptr.value != nil {
-		// If there's no error, cast the generic `void*` to the specific `*T`.
-		// This is the only place we need to use `unsafe` logic.
-		result.Value = (*T)(unsafe.Pointer(ptr.value))
-	}
-	return result
 }

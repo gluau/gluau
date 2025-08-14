@@ -5,7 +5,7 @@
 struct LuaVmWrapper;
 
 struct LuaVmWrapper* newluavm();
-struct GoResult luavm_setmemorylimit(struct LuaVmWrapper* ptr, size_t limit);
+struct GoNoneResult luavm_setmemorylimit(struct LuaVmWrapper* ptr, size_t limit);
 void freeluavm(struct LuaVmWrapper* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
@@ -23,23 +23,11 @@ struct IGoCallback {
 // Test callbacks
 void test_callback(struct IGoCallback* cb, void* val);
 
-// Represents a result from Rust that can be handled by a C-compatible language.
-// It contains either a value or an error.
-struct GoResult {
-    // A generic pointer to the successful result value.
-    // If this is not NULL, the operation was successful.
-    void* value;
-
-    // A pointer to a null-terminated C string for the error message.
-    // If this is not NULL, the operation failed.
-    char* error;
-};
-
 // Note: only deallocates the `GoResult` error, not the value
 void luago_result_error_free(char* result_error_ptr);
 
 // Returns a GoResult[LuaString]
-struct GoResult luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
+struct GoStringResult luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
 struct LuaString;
 
 struct LuaStringBytes {
@@ -106,7 +94,7 @@ void luago_error_free(struct ErrorVariant* ptr);
 
 struct DebugValue {
     // Array of two GoLuaValues for debugging purposes
-    struct GoLuaValue values[3];
+    struct GoLuaValue values[4];
 };
 
 // Debug API
@@ -114,8 +102,46 @@ struct DebugValue luago_dbg_value(struct LuaVmWrapper* ptr);
 
 // Table API
 struct LuaTable;
-struct GoResult luago_create_table(struct LuaVmWrapper* ptr);
-struct GoResult luago_create_table_with_capacity(struct LuaVmWrapper* ptr, size_t narr, size_t nrec);
-struct GoResult luago_table_clear(struct LuaTable* ptr);
-struct GoResult luago_table_contains_key(struct LuaTable* ptr, struct GoLuaValue key);
+struct GoTableResult luago_create_table(struct LuaVmWrapper* ptr);
+struct GoTableResult luago_create_table_with_capacity(struct LuaVmWrapper* ptr, size_t narr, size_t nrec);
+struct GoNoneResult luago_table_clear(struct LuaTable* ptr);
+struct GoBoolResult luago_table_contains_key(struct LuaTable* ptr, struct GoLuaValue key);
+struct GoBoolResult luago_table_equals(struct LuaTable* ptr, struct LuaTable* other);
+struct TableForEachCallbackData {
+    struct GoLuaValue key;
+    struct GoLuaValue value;
+    // Go code may modify the below
+    bool stop;
+};
+struct GoNoneResult luago_table_foreach(struct LuaTable* ptr, struct IGoCallback cb);
 void luago_free_table(struct LuaTable* ptr);
+
+// Result types
+
+struct GoNoneResult {
+    char* error;
+};
+struct GoBoolResult {
+    bool value;
+    char* error;
+};
+struct GoStringResult {
+    // Pointer to the string value
+    struct LuaString* value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoTableResult {
+    // Pointer to the LuaTable value
+    struct LuaTable* value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoValueResult {
+    // The Lua value
+    struct GoLuaValue v;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+
+// Result types end

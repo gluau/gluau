@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"runtime"
 	"time"
-	"unsafe"
 
-	"github.com/gluau/gluau/internal/callback" // Import to ensure callback package is initialized
+	// Import to ensure callback package is initialized
 	vmlib "github.com/gluau/gluau/vm"
 )
 
@@ -15,24 +14,6 @@ import (
 import "C"
 
 func main() {
-	for i := 0; i < 10; i++ {
-		fmt.Println("testing callbacks")
-		callback := callback.NewGoCallback(func(val unsafe.Pointer) {
-			// val for this callback example is a pointer to an integer
-			num := *(*C.int)(val)
-			fmt.Println("Callback called with value:", num)
-		}, func() {
-			fmt.Println("Callback is being dropped")
-		})
-
-		val := 12345 + i
-		cIntPtr := (*C.int)(C.malloc(C.sizeof_int))
-		defer C.free(unsafe.Pointer(cIntPtr))
-		*cIntPtr = C.int(val)
-		cCallback := callback.ToC()
-		C.test_callback((*C.struct_IGoCallback)(unsafe.Pointer(cCallback)), unsafe.Pointer(cIntPtr))
-	}
-
 	// Basic test to ensure the Lua VM can be created and closed properly on GC
 	createVm := func() {
 		vmlib.CreateLuaVm()
@@ -87,10 +68,33 @@ func main() {
 	fmt.Println("LuaValue:", string(val[1].(*vmlib.ValueError).Value().Bytes()))
 	fmt.Println("LuaValue:", val[2].(*vmlib.ValueInteger).Value())
 
+	tab := val[3].(*vmlib.ValueTable).Value()
+	tab.ForEach(func(key, value vmlib.Value) error {
+		if key.Type() == vmlib.LuaValueString {
+			fmt.Println("Key is a LuaString:", key.(*vmlib.ValueString).Value().String())
+		}
+		if value.Type() == vmlib.LuaValueString {
+			fmt.Println("Value is a LuaString:", value.(*vmlib.ValueString).Value().String())
+		} else if value.Type() == vmlib.LuaValueInteger {
+			fmt.Println("Value is a LuaInteger:", value.(*vmlib.ValueInteger).Value())
+		}
+		fmt.Println("Key:", key, "Value:", value)
+		//time.Sleep(time.Second * 20) // Simulate some processing time
+		go func() {
+			fmt.Println("Processing key-value pair in a goroutine:", key, value)
+			// Simulate some processing
+			time.Sleep(time.Millisecond * 500)
+			fmt.Println("Finished processing key-value pair in goroutine:", key, value)
+			runtime.GC() // Force garbage collection to test finalizers are called
+		}()
+		return nil
+	})
+
 	// IMPORTANT
 	val[0].Close()
 	val[1].Close()
 	val[2].Close()
+	val[3].Close()
 
 	time.Sleep(time.Millisecond)
 
@@ -141,4 +145,12 @@ func main() {
 		panic("Lua table should not contain 'foo' key")
 	}
 	fmt.Println("empty table contains 'foo'", containsKey)
+	equals, err := luaTable2.Equals(luaTable2)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to check if Lua table equals another: %v", err))
+	}
+	if !equals {
+		panic("Lua table should equal itself")
+	}
+	fmt.Println("empty table equals itself", equals)
 }

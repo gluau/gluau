@@ -20,38 +20,29 @@ pub struct IGoCallback {
 }
 
 pub struct IGoCallbackWrapper {
-    callback: *mut IGoCallback,
+    callback: IGoCallback,
 }
 
 impl IGoCallbackWrapper {
-    pub fn new(callback: *mut IGoCallback) -> Self {
+    pub fn new(callback: IGoCallback) -> Self {
         IGoCallbackWrapper { callback }
     }
 
     pub fn callback(&self, val: *mut c_void) {
-        if self.callback.is_null() {
-            return;
-        }
-        let cb = unsafe { &*self.callback };
         // Ensure the callback function is valid before calling it.
         // This prevents dereferencing a null pointer or calling an invalid function.
-        if cb.handle != 0 {
-            (cb.callback)(val, cb.handle);
+        if self.callback.handle != 0 {
+            (self.callback.callback)(val, self.callback.handle);
         }
     }
 }
 
 impl Drop for IGoCallbackWrapper {
     fn drop(&mut self) {
-        // Safety: Call the drop function if it exists.
-        if self.callback.is_null() {
-            return;
-        }
-        let cb = unsafe { &*self.callback };
         // Ensure the drop function is called only if the handle is not null.
         // This prevents double freeing or calling drop on an invalid handle.
-        if cb.handle != 0 {
-            (cb.drop)(cb.handle);
+        if self.callback.handle != 0 {
+            (self.callback.drop)(self.callback.handle);
         }
     }
 } 
@@ -60,7 +51,7 @@ impl Drop for IGoCallbackWrapper {
 //void test_callback(struct IGoCallback* cb, void* val);
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn test_callback(cb: *mut IGoCallback, val: *mut c_void) {
+pub extern "C-unwind" fn test_callback(cb: IGoCallback, val: *mut c_void) {
     // Safety: Call the callback function with the provided value.
     let wrapper = IGoCallbackWrapper::new(cb);
     wrapper.callback(val);

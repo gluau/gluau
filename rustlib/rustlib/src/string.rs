@@ -2,10 +2,10 @@
 
 use std::ffi::c_char;
 
-use crate::{result::GoResult, LuaVmWrapper};
+use crate::{result::GoStringResult, LuaVmWrapper};
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoResult  {
+pub extern "C-unwind" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoStringResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
     let lua = unsafe { &(*ptr).lua };
@@ -18,7 +18,10 @@ pub extern "C-unwind" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c
         lua.create_string(slice)
     };
 
-    GoResult::new(res)
+    match res {
+        Ok(str) => GoStringResult::ok(Box::into_raw(Box::new(str))),
+        Err(err) => GoStringResult::err(err)
+    }
 }
 
 #[repr(C)]

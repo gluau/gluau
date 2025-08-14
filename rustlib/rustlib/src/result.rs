@@ -1,39 +1,122 @@
-use std::ffi::{c_char, c_void, CString};
-use mluau::{Error, Result};
+use std::ffi::{c_char, CString};
+use mluau::Error;
 
-/// A GoResult struct that encapsulates a result value or an error.
-/// 
-/// GoResults are stack-allocated and can be used to return results from Rust functions to Go.
+use crate::value::GoLuaValue;
+
 #[repr(C)]
-pub struct GoResult {
-    value: *mut c_void, // Pointer to the result value
-    error: *mut c_char,
+pub struct GoNoneResult {
+    error: *mut c_char
 }
 
-impl GoResult {
-    pub fn new<T: Sized + 'static>(value: Result<T>) -> Self {
-        match value {
-            Ok(val) => GoResult::from_value(val),
-            Err(err) => GoResult::from_error(err),
-        }
-    }
-
-    pub fn from_value<T: Sized + 'static>(value: T) -> Self {
-        let boxed_value = Box::new(value);
-        GoResult {
-            value: Box::into_raw(boxed_value) as *mut c_void,
+impl GoNoneResult {
+    pub fn ok() -> Self {
+        Self {
             error: std::ptr::null_mut(),
         }
     }
 
-    pub fn from_error(error: Error) -> Self {
-        let error_str = format!("{error}");
-        let error_cstr = CString::new(error_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
-        GoResult {
-            value: std::ptr::null_mut(),
-            error: CString::into_raw(error_cstr) as *mut c_char,
+    pub fn err(error: Error) -> Self {
+        Self {
+            error: to_error(error),
         }
     }
+}
+
+#[repr(C)]
+pub struct GoBoolResult {
+    value: bool,
+    error: *mut c_char
+}
+
+impl GoBoolResult {
+    pub fn ok(b: bool) -> Self {
+        Self {
+            value: b,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: false,
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GoStringResult {
+    value: *mut mluau::String,
+    error: *mut c_char
+}
+
+impl GoStringResult {
+    pub fn ok(s: *mut mluau::String) -> Self {
+        Self {
+            value: s,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GoTableResult {
+    value: *mut mluau::Table,
+    error: *mut c_char
+}
+
+impl GoTableResult {
+    pub fn ok(t: *mut mluau::Table) -> Self {
+        Self {
+            value: t,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GoValueResult {
+    value: GoLuaValue,
+    error: *mut c_char
+}
+
+impl GoValueResult {
+    pub fn ok(v: GoLuaValue) -> Self {
+        Self {
+            value: v,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: GoLuaValue::from_owned(mluau::Value::Nil),
+            error: to_error(error),
+        }
+    }
+}
+
+/// Given a error string, return a heap allocated error
+/// 
+/// Useful for API's which have no return
+pub fn to_error(error: Error) -> *mut c_char {
+    let error_str = format!("{error}");
+    let error_cstr = CString::new(error_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
+    CString::into_raw(error_cstr) as *mut c_char
 }
 
 /// Frees the memory for an error string created by Rust.

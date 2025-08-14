@@ -1,6 +1,6 @@
 use mluau::Lua;
 
-use crate::{result::GoResult, LuaVmWrapper};
+use crate::{result::GoNoneResult, LuaVmWrapper};
 
 // Base functions
 
@@ -22,15 +22,15 @@ pub extern "C-unwind" fn newluavm() -> *mut LuaVmWrapper {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> GoResult {
+pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> GoNoneResult {
     // Safety: Assume the Lua VM is valid and we can set its memory limit.
     if ptr.is_null() {
-        return GoResult::from_error(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
+        return GoNoneResult::err(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
     }
     let lua = unsafe { &(*ptr).lua };
     match lua.set_memory_limit(limit) {
-        Ok(_) => GoResult::from_value(true),
-        Err(err) => GoResult::from_error(err),
+        Ok(_) => GoNoneResult::ok(),
+        Err(err) => GoNoneResult::err(err),
     }
 }
 

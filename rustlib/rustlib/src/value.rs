@@ -46,6 +46,7 @@ pub struct ErrorVariant {
 }   
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union LuaValueData {
     boolean: bool,
     light_userdata: *mut c_void,
@@ -423,7 +424,13 @@ pub extern "C-unwind" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
 pub extern "C-unwind" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVariant {
     // Safety: Assume error is a valid, non-null pointer to a C string of length len.
     if error.is_null() || len == 0 {
-        return std::ptr::null_mut();
+        // Assume the user wanted to create an empty error
+        let c_str = CString::new("").unwrap();
+        let arc_str = Arc::new(c_str);
+        let ptr = Box::into_raw(Box::new(ErrorVariant {
+            error: arc_str,
+        }));
+        return ptr;
     }
     // Convert the C string to a Rust CString
     let c_str = unsafe { std::slice::from_raw_parts(error as *const u8, len) };
@@ -477,7 +484,7 @@ pub extern "C-unwind" fn luago_error_free(error: *mut ErrorVariant) {
 
 #[repr(C)]
 pub struct DebugValue {
-    values: [GoLuaValue; 3],
+    values: [GoLuaValue; 4],
 }
 
 // test api
@@ -491,11 +498,21 @@ pub extern "C-unwind" fn luago_dbg_value(ptr: *mut LuaVmWrapper) -> DebugValue {
         lua.create_string("Testing testing 123").unwrap()
     };
 
+    let stupid_table = unsafe {
+        let lua = &(*ptr).lua;
+        lua.create_table_with_capacity(0, 0).unwrap()
+    };
+
+    stupid_table.set("test", mluau::Value::Integer(33)).unwrap();
+    stupid_table.set("test2", "teststring").unwrap();
+
     DebugValue {
         values: [
             GoLuaValue::from_owned(mluau::Value::String(res)),
             GoLuaValue::from_owned(mluau::Value::Error(mluau::Error::external("This is a test error".to_string()).into())),
             GoLuaValue::from_owned(mluau::Value::Integer(2939398)),
+            GoLuaValue::from_owned(mluau::Value::Table(stupid_table)),
         ]
     }
 }
+
