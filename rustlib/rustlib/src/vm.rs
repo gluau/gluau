@@ -5,8 +5,13 @@ use crate::{result::GoResult, LuaVmWrapper};
 // Base functions
 
 #[unsafe(no_mangle)]
-pub extern "C" fn newluavm() -> *mut LuaVmWrapper {
-    let lua = Lua::new();
+pub extern "C-unwind" fn newluavm() -> *mut LuaVmWrapper {
+    let lua = Lua::new_with(
+        mluau::StdLib::ALL_SAFE, // TODO: Allow configuring this
+        mluau::LuaOptions::new()
+        .catch_rust_panics(false)
+        .disable_error_userdata(true)
+    ).unwrap(); // Will never error, as we are using safe libraries only.
 
     lua.set_on_close(|| {
         println!("Lua VM is being closed");
@@ -17,7 +22,7 @@ pub extern "C" fn newluavm() -> *mut LuaVmWrapper {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> GoResult {
+pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> GoResult {
     // Safety: Assume the Lua VM is valid and we can set its memory limit.
     if ptr.is_null() {
         return GoResult::from_error(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
@@ -30,7 +35,7 @@ pub extern "C" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn freeluavm(ptr: *mut LuaVmWrapper) {
+pub extern "C-unwind" fn freeluavm(ptr: *mut LuaVmWrapper) {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that ownership is being transferred back to Rust to be dropped.
     unsafe {

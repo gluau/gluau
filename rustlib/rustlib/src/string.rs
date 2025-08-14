@@ -5,7 +5,7 @@ use std::ffi::c_char;
 use crate::{result::GoResult, LuaVmWrapper};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoResult  {
+pub extern "C-unwind" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.
     let lua = unsafe { &(*ptr).lua };
@@ -30,7 +30,7 @@ pub struct LuaStringBytes {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_as_bytes(string: *mut mluau::String) -> LuaStringBytes {
+pub extern "C-unwind" fn luago_string_as_bytes(string: *mut mluau::String) -> LuaStringBytes {
     // Safety: Assume string is a valid, non-null pointer to a Lua String
     if string.is_null() {
         return LuaStringBytes {
@@ -50,7 +50,7 @@ pub extern "C" fn luago_string_as_bytes(string: *mut mluau::String) -> LuaString
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_as_bytes_with_nul(string: *mut mluau::String) -> LuaStringBytes {
+pub extern "C-unwind" fn luago_string_as_bytes_with_nul(string: *mut mluau::String) -> LuaStringBytes {
     // Safety: Assume string is a valid, non-null pointer to a Lua String
     if string.is_null() {
         return LuaStringBytes {
@@ -70,7 +70,7 @@ pub extern "C" fn luago_string_as_bytes_with_nul(string: *mut mluau::String) -> 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_to_pointer(string: *mut mluau::String) -> usize {
+pub extern "C-unwind" fn luago_string_to_pointer(string: *mut mluau::String) -> usize {
     // Safety: Assume string is a valid, non-null pointer to a Lua String
     if string.is_null() {
         return 0;
@@ -85,7 +85,7 @@ pub extern "C" fn luago_string_to_pointer(string: *mut mluau::String) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_free_string(string: *mut mluau::String) {
+pub extern "C-unwind" fn luago_free_string(string: *mut mluau::String) {
     // Safety: Assume string is a valid, non-null pointer to a Lua String
     if string.is_null() {
         return;

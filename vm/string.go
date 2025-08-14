@@ -1,29 +1,74 @@
 package vm
 
-import "github.com/gluau/gluau/internal/vm"
+import (
+	"unsafe"
+)
 
+/*
+#include "../rustlib/rustlib.h"
+*/
+import "C"
+
+var stringTab = objectTab{
+	dtor: func(ptr *C.void) {
+		C.luago_free_string((*C.struct_LuaString)(unsafe.Pointer(ptr)))
+	},
+}
+
+// A LuaString is an abstraction over a Lua string object.
 type LuaString struct {
-	ptr *vm.LuaString
+	object *object
 }
 
 // Returns the LuaString as a byte slice
 func (l *LuaString) Bytes() []byte {
-	return l.ptr.Bytes()
+	l.object.RLock()
+	defer l.object.RUnlock()
+	ptr, err := l.object.PointerNoLock()
+	if err != nil {
+		return nil // Return nil if the object is closed
+	}
+	data := C.luago_string_as_bytes((*C.struct_LuaString)(unsafe.Pointer(ptr)))
+	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
+	return goSlice
 }
 
 // Returns the LuaString as a byte slice with nul terminator
 func (l *LuaString) BytesWithNul() []byte {
-	return l.ptr.BytesWithNul()
+	l.object.RLock()
+	defer l.object.RUnlock()
+	ptr, err := l.object.PointerNoLock()
+	if err != nil {
+		return nil // Return nil if the object is closed
+	}
+
+	data := C.luago_string_as_bytes_with_nul((*C.struct_LuaString)(unsafe.Pointer(ptr)))
+	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
+	return goSlice
 }
 
 // Returns a 'pointer' to a LuaString
-// Note: this pointer is only useful for hashing and debugging and you cannot
-// get back a LuaString from it.
 func (l *LuaString) Pointer() uint64 {
-	return l.ptr.Pointer()
+	l.object.RLock()
+	defer l.object.RUnlock()
+	lptr, err := l.object.PointerNoLock()
+	if err != nil {
+		return 0 // Return 0 if the object is closed
+	}
+
+	ptr := C.luago_string_to_pointer((*C.struct_LuaString)(unsafe.Pointer(lptr)))
+	return uint64(ptr)
 }
 
-// Close cleans up the LuaString
+func (l *LuaString) String() string {
+	// Convert the LuaString to a Go string
+	return string(l.Bytes())
+}
+
 func (l *LuaString) Close() {
-	l.ptr.Close()
+	if l == nil || l.object == nil {
+		return // Nothing to close
+	}
+	// Close the LuaString object
+	l.object.Close()
 }

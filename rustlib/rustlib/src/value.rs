@@ -413,14 +413,14 @@ impl GoLuaValue {
 
 // Clones a GoLuaValue
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
+pub extern "C-unwind" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
     let cloned_value = value.clone();
     cloned_value
 }
 
 // Creates a new error variant given char array and length
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVariant {
+pub extern "C-unwind" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVariant {
     // Safety: Assume error is a valid, non-null pointer to a C string of length len.
     if error.is_null() || len == 0 {
         return std::ptr::null_mut();
@@ -442,7 +442,7 @@ pub extern "C" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVar
 
 // Returns the inner error string from the ErrorVariant
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_error_get_string(error: *mut ErrorVariant) -> super::string::LuaStringBytes {
+pub extern "C-unwind" fn luago_error_get_string(error: *mut ErrorVariant) -> super::string::LuaStringBytes {
     // Safety: Assume error is a valid, non-null pointer to an ErrorVariant
     if error.is_null() {
         return LuaStringBytes {
@@ -463,7 +463,7 @@ pub extern "C" fn luago_error_get_string(error: *mut ErrorVariant) -> super::str
 
 // Needed to free a error string
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_error_free(error: *mut ErrorVariant) {
+pub extern "C-unwind" fn luago_error_free(error: *mut ErrorVariant) {
     // Safety: Assume error is a valid, non-null pointer to a C string
     if error.is_null() {
         return;
@@ -482,7 +482,7 @@ pub struct DebugValue {
 
 // test api
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_dbg_value(ptr: *mut LuaVmWrapper) -> DebugValue {
+pub extern "C-unwind" fn luago_dbg_value(ptr: *mut LuaVmWrapper) -> DebugValue {
     // Create a dummy Lua value for testing purposes
         // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that s points to a valid C string of length len.

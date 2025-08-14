@@ -60,7 +60,7 @@ impl Drop for IGoCallbackWrapper {
 //void test_callback(struct IGoCallback* cb, void* val);
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_callback(cb: *mut IGoCallback, val: *mut c_void) {
+pub extern "C-unwind" fn test_callback(cb: *mut IGoCallback, val: *mut c_void) {
     // Safety: Call the callback function with the provided value.
     let wrapper = IGoCallbackWrapper::new(cb);
     wrapper.callback(val);

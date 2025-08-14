@@ -116,4 +116,6 @@ struct DebugValue luago_dbg_value(struct LuaVmWrapper* ptr);
 struct LuaTable;
 struct GoResult luago_create_table(struct LuaVmWrapper* ptr);
 struct GoResult luago_create_table_with_capacity(struct LuaVmWrapper* ptr, size_t narr, size_t nrec);
+struct GoResult luago_table_clear(struct LuaTable* ptr);
+struct GoResult luago_table_contains_key(struct LuaTable* ptr, struct GoLuaValue key);
 void luago_free_table(struct LuaTable* ptr);

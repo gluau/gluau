@@ -7,8 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/gluau/gluau/internal/callback" // Import to ensure callback package is initialized
-	ivm "github.com/gluau/gluau/internal/vm"   // Import internal vm package for Lua VM operations
-	"github.com/gluau/gluau/vm"
+	vmlib "github.com/gluau/gluau/vm"
 )
 
 // #include <stdlib.h>
@@ -36,10 +35,10 @@ func main() {
 
 	// Basic test to ensure the Lua VM can be created and closed properly on GC
 	createVm := func() {
-		vm.CreateLuaVm()
+		vmlib.CreateLuaVm()
 	}
 
-	luaVm, err := vm.CreateLuaVm()
+	luaVm, err := vmlib.CreateLuaVm()
 	if err != nil {
 		fmt.Println("Error creating Lua VM:", err)
 		return
@@ -61,7 +60,7 @@ func main() {
 	// For example, you might call methods on luaVm.lua
 	// to execute Lua scripts or manipulate Lua state.
 
-	vm, err := vm.CreateLuaVm()
+	vm, err := vmlib.CreateLuaVm()
 	if err != nil {
 		fmt.Println("Error creating Lua VM:", err)
 		return
@@ -84,28 +83,14 @@ func main() {
 
 	// Debug test
 	val := vm.DebugValue()
-	fmt.Println("LuaValue:", string(val[0].(*ivm.ValueString).Value.Bytes()))
-	fmt.Println("LuaValue:", string(val[1].(*ivm.ValueError).Value.Bytes()))
-	fmt.Println("LuaValue:", val[2].(*ivm.ValueInteger).Value)
-	a, _ := ivm.ValueToC(val[0]) // Convert LuaValue to C pointer and clone it
-	b, _ := ivm.ValueToC(val[1]) // Convert LuaValue to C pointer and clone it
-	c, _ := ivm.ValueToC(val[2]) // Convert LuaValue to C pointer and clone it
-	fmt.Println("LuaValue C pointer:", a, b, c)
-	aBack := ivm.ValueFromC(a)
-	bBack := ivm.ValueFromC(b)
-	cBack := ivm.ValueFromC(c)
-	fmt.Println("LuaValue C back:", aBack, bBack, cBack)
-	fmt.Println("LuaValue C back as string:", string(aBack.(*ivm.ValueString).Value.Bytes()))
-	fmt.Println("LuaValue C back as error:", string(bBack.(*ivm.ValueError).Value.Bytes()))
-	fmt.Println("LuaValue C back as integer:", cBack.(*ivm.ValueInteger).Value)
+	fmt.Println("LuaValue:", string(val[0].(*vmlib.ValueString).Value.Bytes()))
+	fmt.Println("LuaValue:", string(val[1].(*vmlib.ValueError).Value.Bytes()))
+	fmt.Println("LuaValue:", val[2].(*vmlib.ValueInteger).Value)
 
 	// IMPORTANT
 	val[0].Close()
 	val[1].Close()
 	val[2].Close()
-	aBack.Close()
-	bBack.Close()
-	cBack.Close()
 
 	time.Sleep(time.Millisecond)
 
@@ -128,8 +113,19 @@ func main() {
 	luaTable, err := vm.CreateTableWithCapacity(100000000, 10)
 	if err != nil {
 		fmt.Println("Error creating Lua table:", err)
-		return
+	} else {
+		fmt.Println("Lua table created successfully:", luaTable)
+		panic("this should never happen (table overflow expected)")
 	}
 	defer luaTable.Close() // Ensure we close the Lua table when done
-	fmt.Println("Lua table created successfully:", luaTable)
+
+	luaTable2, err := vm.CreateTableWithCapacity(10000, 10)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Lua table created successfully:", luaTable2)
+	defer luaTable2.Close() // Ensure we close the Lua table when done
+	if err := luaTable2.Clear(); err != nil {
+		panic(fmt.Sprintf("Failed to clear Lua table: %v", err))
+	}
 }

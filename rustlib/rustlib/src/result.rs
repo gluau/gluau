@@ -38,7 +38,7 @@ impl GoResult {
 
 /// Frees the memory for an error string created by Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_result_error_free(error_ptr: *mut c_char) {
+pub extern "C-unwind" fn luago_result_error_free(error_ptr: *mut c_char) {
     if !error_ptr.is_null() {
         // Reconstruct the CString from the raw pointer and let it drop,
         // which deallocates the memory.
