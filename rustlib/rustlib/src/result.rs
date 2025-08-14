@@ -45,6 +45,28 @@ impl GoBoolResult {
 }
 
 #[repr(C)]
+pub struct GoI64Result {
+    value: i64,
+    error: *mut c_char
+}
+
+impl GoI64Result {
+    pub fn ok(v: i64) -> Self {
+        Self {
+            value: v,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: 0,
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
 pub struct GoStringResult {
     value: *mut mluau::String,
     error: *mut c_char

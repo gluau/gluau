@@ -90,6 +90,48 @@ func main() {
 		return nil
 	})
 
+	key, err := vm.CreateString("test2")
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua string: %v", err))
+	}
+	gotValue, err := tab.Get(key.ToValue())
+	key.Close() // Clean up the Lua string when done
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get value from Lua table: %v", err))
+	}
+	if gotValue.Type() == vmlib.LuaValueString {
+		fmt.Println("Got LuaValueString:", gotValue.(*vmlib.ValueString).Value().String())
+	} else {
+		panic(fmt.Sprintf("Expected LuaValueString, got %d", gotValue.Type()))
+	}
+
+	isEmpty := tab.IsEmpty()
+	if isEmpty {
+		panic("Non-empty Lua table is empty")
+	}
+	len, err := tab.Len()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get Lua table length: %v", err))
+	}
+	if len != 0 {
+		panic("Lua table length should be 0 (as all key-value pairs so no array indices), got " + fmt.Sprint(len))
+	}
+	mt := tab.Metatable()
+	if mt != nil {
+		panic("Lua table should not have a metatable")
+	}
+	poppedValue, err := tab.Pop()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to pop value from Lua table: %v", err))
+	}
+	if poppedValue.Type() != vmlib.LuaValueNil {
+		panic(fmt.Sprintf("Expected LuaValueNil, got %d", poppedValue.Type()))
+	}
+	err = tab.Push(vmlib.GoString("test"))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to push value to Lua table: %v", err))
+	}
+
 	// IMPORTANT
 	val[0].Close()
 	val[1].Close()

@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use crate::{result::{GoBoolResult, GoNoneResult, GoTableResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
+use crate::{result::{GoBoolResult, GoI64Result, GoNoneResult, GoTableResult, GoValueResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
 
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_create_table(ptr: *mut LuaVmWrapper) -> GoTableResult  {
@@ -129,22 +129,100 @@ pub extern "C-unwind" fn luago_table_foreach(tab: *mut mluau::Table, cb: IGoCall
     }
 }
 
-/*#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_table_get(tab: *mut mluau::Table, key: GoLuaValue) -> GoResult {
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_get(tab: *mut mluau::Table, key: GoLuaValue) -> GoValueResult {
     // Safety: Assume table is a valid, non-null pointer to a Lua Table
     if tab.is_null() {
-        return GoResult::from_error(mluau::Error::external("Table pointer is null".to_string()));
+        return GoValueResult::err(mluau::Error::external("Table pointer is null".to_string()));
     }
 
     let tab = unsafe { &*tab };
     let key = key.to_value_from_owned();
-    let res = tab.get(key);
+    let res = tab.get::<mluau::Value>(key);
     
     match res {
-        Ok(r) => GoResult::from_value(GoResultValue::new_table(GoLuaValue::from_owned(r))),
-        Err(err) => GoResult::from_error(err),
+        Ok(r) => GoValueResult::ok(GoLuaValue::from_owned(r)),
+        Err(err) => GoValueResult::err(err),
     }
-}*/
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_is_empty(tab: *mut mluau::Table) -> bool {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if tab.is_null() {
+        return true; // If the table pointer is null, consider it empty
+    }
+
+    let tab = unsafe { &*tab };
+    tab.is_empty()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_is_readonly(tab: *mut mluau::Table) -> bool {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if tab.is_null() {
+        return true; // If the table pointer is null, consider it readonly
+    }
+
+    let tab = unsafe { &*tab };
+    tab.is_readonly()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_len(tab: *mut mluau::Table) -> GoI64Result {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if tab.is_null() {
+        return GoI64Result::err(mluau::Error::external("Table pointer is null".to_string()));
+    }
+
+    let tab = unsafe { &*tab };
+    match tab.len() {
+        Ok(len) => GoI64Result::ok(len),
+        Err(err) => GoI64Result::err(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_metatable(tab: *mut mluau::Table) -> *mut mluau::Table {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if tab.is_null() {
+        return std::ptr::null_mut(); // If the table pointer is null, return null
+    }
+
+    let tab = unsafe { &*tab };
+    match tab.metatable() {
+        Some(mt) => Box::into_raw(Box::new(mt)),
+        None => std::ptr::null_mut(), // If no metatable, return null
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_pop(tab: *mut mluau::Table) -> GoValueResult {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if tab.is_null() {
+        return GoValueResult::err(mluau::Error::external("Table pointer is null".to_string()));
+    }
+
+    let tab = unsafe { &*tab };
+    match tab.pop::<mluau::Value>() {
+        Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
+        Err(err) => GoValueResult::err(err),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_table_push(tab: *mut mluau::Table, value: GoLuaValue) -> GoNoneResult {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if tab.is_null() {
+        return GoNoneResult::err(mluau::Error::external("Table pointer is null".to_string()));
+    }
+
+    let tab = unsafe { &*tab };
+    match tab.push(value.to_value_from_owned()) {
+        Ok(_) => GoNoneResult::ok(),
+        Err(err) => GoNoneResult::err(err),
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_free_table(tab: *mut mluau::Table) {

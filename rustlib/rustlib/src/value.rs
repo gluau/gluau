@@ -69,16 +69,25 @@ pub struct GoLuaValue {
     data: LuaValueData,
 }
 
+// Safety note:
+//
+// Previous versions of this included methods that converted between references
+// of GoLuaValue and mluau::Value. This is annoying as it could lead to memory leaks
+//
+// Instead, the current code always takes ownership of the GoLuaValue and converts it to 
+// a mluau::Value.
 impl GoLuaValue {
     // Clones the GoLuaValue
     pub fn clone(&self) -> Self {
         match self.tag {
+            // Primitives, no cloning is actually needed.
             LuaValueType::Nil => GoLuaValue { tag: LuaValueType::Nil, data: LuaValueData { boolean: false } },
             LuaValueType::Boolean => GoLuaValue { tag: LuaValueType::Boolean, data: LuaValueData { boolean: unsafe { self.data.boolean } } },
             LuaValueType::LightUserData => GoLuaValue { tag: LuaValueType::LightUserData, data: LuaValueData { light_userdata: unsafe { self.data.light_userdata } } },
             LuaValueType::Integer => GoLuaValue { tag: LuaValueType::Integer, data: LuaValueData { integer: unsafe { self.data.integer } } },
             LuaValueType::Number => GoLuaValue { tag: LuaValueType::Number, data: LuaValueData { number: unsafe { self.data.number } } },
             LuaValueType::Vector => GoLuaValue { tag: LuaValueType::Vector, data: LuaValueData { vector: unsafe { self.data.vector } } },
+            // Complex types, we need to clone to increment the refcount internally
             LuaValueType::String => {
                 let string_ptr = unsafe { self.data.string };
                 if string_ptr.is_null() {
@@ -156,114 +165,8 @@ impl GoLuaValue {
                     } }
                 }
             },
+            // TODO: Support this better later on
             LuaValueType::Other => GoLuaValue { tag: LuaValueType::Other, data: LuaValueData { boolean: false } },
-        }
-    }
-
-    // # Safety
-    //
-    // This function guarantees to not free any memory that is managed by Go.
-    // It only converts the LuaValueType to a mluau::Value.
-    //
-    // In addition to this, it is safe to call this function multiple times
-    // on the same GoLuaValue, as it does not mutate the internal state.
-    pub fn to_value_from_ref(&self) -> mluau::Value {
-        match self.tag {
-            LuaValueType::Nil => mluau::Value::Nil,
-            LuaValueType::Boolean => {
-                let boolean = unsafe { self.data.boolean };
-                mluau::Value::Boolean(boolean)
-            },
-            LuaValueType::LightUserData => {
-                let light_userdata = unsafe { self.data.light_userdata };
-                mluau::Value::LightUserData(mluau::LightUserData(light_userdata))
-            },
-            LuaValueType::Integer => {
-                let integer = unsafe { self.data.integer };
-                mluau::Value::Integer(integer)
-            },
-            LuaValueType::Number => {
-                let number = unsafe { self.data.number };
-                mluau::Value::Number(number)
-            },
-            LuaValueType::Vector => {
-                let vector = unsafe { self.data.vector };
-                mluau::Value::Vector(mluau::Vector::new(vector[0], vector[1], vector[2]))
-            },
-            LuaValueType::String => {
-                let string_ptr = unsafe { self.data.string };
-                if string_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    // Safety: Avoid free'ing the string pointer here, as it is managed by Go
-                    let string_ptr = unsafe { &*string_ptr };
-                    mluau::Value::String(string_ptr.clone())
-                }
-            },
-            LuaValueType::Table => {
-                let table_ptr = unsafe { self.data.table };
-                if table_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    // Safety: Avoid free'ing the table pointer here, as it is managed by Go
-                    let table_ptr = unsafe { &*table_ptr };
-                    mluau::Value::Table(table_ptr.clone())
-                }
-            },
-            LuaValueType::Function => {
-                let function_ptr = unsafe { self.data.function };
-                if function_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    let function_ptr = unsafe { &*function_ptr };
-                    // Safety: Avoid free'ing the function pointer here, as it is managed by Go
-                    mluau::Value::Function(function_ptr.clone())
-                }
-            },
-            LuaValueType::Thread => {
-                let thread_ptr = unsafe { self.data.thread };
-                if thread_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    // Safety: Avoid free'ing the thread pointer here, as it is managed by Go
-                    let thread_ptr = unsafe { &*thread_ptr };
-                    mluau::Value::Thread(thread_ptr.clone())
-                }
-            },
-            LuaValueType::UserData => {
-                let userdata_ptr = unsafe { self.data.userdata };
-                if userdata_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    // Safety: Avoid free'ing the userdata pointer here, as it is managed by Go
-                    let userdata_ptr = unsafe { &*userdata_ptr };
-                    mluau::Value::UserData(userdata_ptr.clone())
-                }
-            },
-            LuaValueType::Buffer => {
-                let buffer_ptr = unsafe { self.data.buffer };
-                if buffer_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    let buffer_ptr = unsafe { &*buffer_ptr };
-                    mluau::Value::Buffer(buffer_ptr.clone())   
-                }
-            },
-            LuaValueType::Error => {
-                let error_ptr = unsafe { self.data.error };
-                if error_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    // Safety: Avoid free'ing the error pointer here, as it is managed by Go
-                    let error_variant = unsafe { &*error_ptr };
-                    let error_string = error_variant.error.to_string_lossy().into_owned();
-                    mluau::Value::Error(mluau::Error::external(error_string).into())
-                }
-            },
-            LuaValueType::Other => {
-                // Handle other types, currently returning Nil
-                mluau::Value::Nil
-            },
         }
     }
 
@@ -349,36 +252,6 @@ impl GoLuaValue {
                 mluau::Value::Nil
             },
         }
-    }
-
-    pub fn from_ref(value: &mluau::Value) -> Self {
-        let tag = LuaValueType::from_value(value);
-        let data = match value {
-            mluau::Value::Nil => LuaValueData { boolean: false },
-            mluau::Value::Boolean(b) => LuaValueData { boolean: *b },
-            mluau::Value::LightUserData(ptr) => LuaValueData { light_userdata: ptr.0 },
-            mluau::Value::Integer(i) => LuaValueData { integer: *i },
-            mluau::Value::Number(n) => LuaValueData { number: *n },
-            mluau::Value::Vector(v) => LuaValueData { vector: [v.x(), v.y(), v.z()] },
-            mluau::Value::String(s) => LuaValueData { string: Box::into_raw(Box::new(s.clone())) },
-            mluau::Value::Table(t) => LuaValueData { table: Box::into_raw(Box::new(t.clone())) },
-            mluau::Value::Function(f) => LuaValueData { function: Box::into_raw(Box::new(f.clone())) },
-            mluau::Value::Thread(t) => LuaValueData { thread: Box::into_raw(Box::new(t.clone())) },
-            mluau::Value::UserData(ud) => LuaValueData { userdata: Box::into_raw(Box::new(ud.clone())) },
-            mluau::Value::Buffer(buf) => LuaValueData { buffer: Box::into_raw(Box::new(buf.clone())) },
-            mluau::Value::Error(err) => {
-                let err_str = format!("{err}");
-                let err_cstr = CString::new(err_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
-                // Store the error as a CString to ensure proper memory management
-                let err_ptr = Arc::new(err_cstr);
-                let ptr = Box::into_raw(Box::new(ErrorVariant {
-                    error: err_ptr
-                }));
-                LuaValueData { error: ptr }
-            },
-            _ => LuaValueData { other: std::ptr::null_mut() }, // Handle other types
-        };
-        GoLuaValue { tag, data }
     }
 
     pub fn from_owned(value: mluau::Value) -> Self {

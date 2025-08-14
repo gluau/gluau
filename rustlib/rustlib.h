@@ -114,6 +114,13 @@ struct TableForEachCallbackData {
     bool stop;
 };
 struct GoNoneResult luago_table_foreach(struct LuaTable* ptr, struct IGoCallback cb);
+struct GoValueResult luago_table_get(struct LuaTable* ptr, struct GoLuaValue key);
+bool luago_table_is_empty(struct LuaTable* ptr);
+bool luago_table_is_readonly(struct LuaTable* ptr);
+struct GoI64Result luago_table_len(struct LuaTable* ptr);
+struct LuaTable* luago_table_metatable(struct LuaTable* ptr);
+struct GoValueResult luago_table_pop(struct LuaTable* ptr);
+struct GoNoneResult luago_table_push(struct LuaTable* ptr, struct GoLuaValue value);
 void luago_free_table(struct LuaTable* ptr);
 
 // Result types
@@ -123,6 +130,10 @@ struct GoNoneResult {
 };
 struct GoBoolResult {
     bool value;
+    char* error;
+};
+struct GoI64Result {
+    int64_t value;
     char* error;
 };
 struct GoStringResult {
@@ -139,7 +150,7 @@ struct GoTableResult {
 };
 struct GoValueResult {
     // The Lua value
-    struct GoLuaValue v;
+    struct GoLuaValue value;
     // Pointer to a null-terminated C string for the error message
     char* error;
 };

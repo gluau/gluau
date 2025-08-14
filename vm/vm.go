@@ -98,7 +98,7 @@ func (l *GoLuaVmWrapper) CreateTable() (*LuaTable, error) {
 	if res.error != nil {
 		return nil, moveErrorToGoError(res.error)
 	}
-	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab)}, nil
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
 }
 
 // CreateTableWithCapacity creates a new Lua table with specified capacity for array and record parts.
@@ -116,28 +116,20 @@ func (l *GoLuaVmWrapper) CreateTableWithCapacity(narr, nrec int) (*LuaTable, err
 	if res.error != nil {
 		return nil, moveErrorToGoError(res.error)
 	}
-	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab)}, nil
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
 }
 
 // CreateErrorVariant creates a new ErrorVariant from a byte slice.
 func CreateErrorVariant(s []byte) *ErrorVariant {
-	res := newErrorVariantC(s) // Make a new ErrorVariant C struct
-	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
-}
 
-func newErrorVariantC(s []byte) *C.struct_ErrorVariant {
 	if len(s) == 0 {
 		// Passing nil to luago_create_string creates an empty string.
-		return C.luago_error_new((*C.char)(nil), C.size_t(len(s)))
+		res := C.luago_error_new((*C.char)(nil), C.size_t(len(s)))
+		return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 	}
 
-	return C.luago_error_new((*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
-}
-
-func freeErrorVariantC(ptr *C.struct_ErrorVariant) {
-	if ptr != nil {
-		C.luago_error_free(ptr) // Free the C struct
-	}
+	res := C.luago_error_new((*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
+	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 }
 
 func (l *GoLuaVmWrapper) DebugValue() [4]Value {
@@ -152,7 +144,7 @@ func (l *GoLuaVmWrapper) DebugValue() [4]Value {
 	v := C.luago_dbg_value(lua)
 	values := [4]Value{}
 	for i, v := range v.values {
-		values[i] = valueFromC(v)
+		values[i] = l.valueFromC(v)
 	}
 	return values
 }
