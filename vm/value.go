@@ -399,7 +399,7 @@ func (l *GoLuaVmWrapper) valueFromC(item C.struct_GoLuaValue) Value {
 
 // DirectValueToC converts a Go Value interface to a C struct_GoLuaValue
 // with the intent that the value will be passed to Rust code.
-// Note: this does not clone the value, it simply converts it.
+// Note: this does not clone the value or performing any locking, it simply converts it.
 //
 // Internal API: do not use unless you know what you're doing
 //
@@ -409,7 +409,7 @@ func (l *GoLuaVmWrapper) valueFromC(item C.struct_GoLuaValue) Value {
 //
 // In particular, ValueFromC should *never* be called directly on the result of this function,
 // as it may lead to memory corruption or undefined behavior.
-func (l *GoLuaVmWrapper) directValueToC(value Value) (C.struct_GoLuaValue, error) {
+func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 	var cVal C.struct_GoLuaValue
 	switch value.Type() {
 	case LuaValueNil:
@@ -527,7 +527,7 @@ func (l *GoLuaVmWrapper) valueToC(value Value) (C.struct_GoLuaValue, error) {
 		defer obj.RUnlock()
 	}
 
-	cptr, err := l.directValueToC(value)
+	cptr, err := l._directValueToC(value)
 	if err != nil {
 		return cptr, err
 	}

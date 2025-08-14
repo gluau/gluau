@@ -117,7 +117,7 @@ pub extern "C-unwind" fn luago_table_foreach(tab: *mut mluau::Table, cb: IGoCall
 
         if data.stop {
             // Use a dummy error variant to stop the iteration
-            return Err(mluau::Error::BindError);
+            return Err(mluau::Error::external("stop"));
         }
 
         Ok(())

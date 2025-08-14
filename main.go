@@ -81,14 +81,28 @@ func main() {
 		fmt.Println("Key:", key, "Value:", value)
 		//time.Sleep(time.Second * 20) // Simulate some processing time
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Println("Recovered from panic in goroutine:", r)
+				}
+			}()
 			fmt.Println("Processing key-value pair in a goroutine:", key, value)
 			// Simulate some processing
-			time.Sleep(time.Millisecond * 500)
 			fmt.Println("Finished processing key-value pair in goroutine:", key, value)
-			runtime.GC() // Force garbage collection to test finalizers are called
+			panic("whee")
 		}()
 		return nil
 	})
+
+	err = tab.ForEach(func(key, value vmlib.Value) error {
+		panic("test panic")
+	})
+	if err == nil {
+		panic("Expected error from ForEach, got nil")
+	} else if err.Error() != "panic in ForEach callback: test panic" {
+		panic("Expected 'panic in ForEach callback: test panic' error, got: " + err.Error())
+	}
+	fmt.Println("ForEach callback error:", err)
 
 	key, err := vm.CreateString("test2")
 	if err != nil {
@@ -131,7 +145,13 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to push value to Lua table: %v", err))
 	}
-
+	len, err = tab.Len()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get Lua table length after push: %v", err))
+	}
+	if len != 1 {
+		panic("Lua table length should be 1 after push, got " + fmt.Sprint(len))
+	}
 	// IMPORTANT
 	val[0].Close()
 	val[1].Close()

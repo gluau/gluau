@@ -113,6 +113,17 @@ func (l *LuaTable) ForEach(fn TableForEachFn) error {
 		cval := (*C.struct_TableForEachCallbackData)(val)
 		key := l.lua.valueFromC(cval.key)
 		value := l.lua.valueFromC(cval.value)
+
+		// Safety: it is undefined behavior for the callback to unwind into
+		// Rust (or even C!) frames from Go, so we must recover() any panic
+		// that occurs in the callback to prevent a crash.
+		defer func() {
+			if r := recover(); r != nil {
+				errv = fmt.Errorf("panic in ForEach callback: %v", r)
+				cval.stop = C.bool(true) // Stop the iteration
+			}
+		}()
+
 		err := fn(key, value)
 		if err != nil {
 			errv = err               // Capture the error to return it later
@@ -125,7 +136,7 @@ func (l *LuaTable) ForEach(fn TableForEachFn) error {
 	res := C.luago_table_foreach(ptr, cbWrapper.ToC())
 	if res.error != nil {
 		errStr := moveErrorToGo(res.error)
-		if errStr != "" && errStr != "stop" {
+		if errStr != "stop" {
 			return errors.New(errStr)
 		}
 	}
