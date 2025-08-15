@@ -20,7 +20,7 @@ pub extern "C-unwind" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c
 
     match res {
         Ok(str) => GoStringResult::ok(Box::into_raw(Box::new(str))),
-        Err(err) => GoStringResult::err(err)
+        Err(err) => GoStringResult::err(format!("{err}"))
     }
 }
 

@@ -42,7 +42,8 @@ func (l *LuaTable) Clear() error {
 
 	res := C.luago_table_clear(ptr)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 
 	return nil
@@ -135,10 +136,8 @@ func (l *LuaTable) ForEach(fn TableForEachFn) error {
 
 	res := C.luago_table_foreach(ptr, cbWrapper.ToC())
 	if res.error != nil {
-		errStr := moveErrorToGo(res.error)
-		if errStr != "stop" {
-			return errors.New(errStr)
-		}
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 
 	return errv
@@ -328,7 +327,8 @@ func (l *LuaTable) Push(value Value) error {
 	}
 	res := C.luago_table_push(ptr, valueVal)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -372,7 +372,8 @@ func (l *LuaTable) RawInsert(idx int64, value Value) error {
 
 	res := C.luago_table_raw_insert(ptr, C.int64_t(idx), valueVal)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -422,7 +423,8 @@ func (l *LuaTable) RawPush(value Value) error {
 	}
 	res := C.luago_table_raw_push(ptr, valueVal)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -447,7 +449,8 @@ func (l *LuaTable) RawRemove(key Value) error {
 	}
 	res := C.luago_table_raw_remove(ptr, keyVal)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -473,7 +476,8 @@ func (l *LuaTable) RawSet(key Value, value Value) error {
 	}
 	res := C.luago_table_raw_set(ptr, keyVal, valueVal)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -501,7 +505,8 @@ func (l *LuaTable) Set(key Value, value Value) error {
 	}
 	res := C.luago_table_set(ptr, keyVal, valueVal)
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -533,7 +538,8 @@ func (l *LuaTable) SetMetatable(mt *LuaTable) error {
 		}
 		res := C.luago_table_set_metatable(ptr, ptr2)
 		if res.error != nil {
-			return moveErrorToGoError(res.error)
+			err := moveErrorToGoError(res.error)
+			return err
 		}
 		return nil
 	}

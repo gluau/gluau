@@ -16,8 +16,11 @@ import "C"
 
 func main() {
 	// Basic test to ensure the Lua VM can be created and closed properly on GC
-	createVm := func() {
-		vmlib.CreateLuaVm()
+	/*createVm := func() {
+		vm, err := vmlib.CreateLuaVm()
+		if err == nil {
+			defer vm.Close()
+		}
 	}
 
 	luaVm, err := vmlib.CreateLuaVm()
@@ -34,7 +37,7 @@ func main() {
 		fmt.Println("Creating another Lua VM instance")
 		createVm()
 		runtime.GC() // Force garbage collection to test finalizers are called
-	}
+	}*/
 
 	//defer luaVm.Drop() // Ensure we free the Lua VM when done
 
@@ -70,9 +73,11 @@ func main() {
 	fmt.Println("LuaValue:", val[2].(*vmlib.ValueInteger).Value())
 
 	tab := val[3].(*vmlib.ValueTable).Value()
+	var testKey vmlib.Value
 	tab.ForEach(func(key, value vmlib.Value) error {
 		if key.Type() == vmlib.LuaValueString {
 			fmt.Println("Key is a LuaString:", key.(*vmlib.ValueString).Value().String())
+			testKey = key
 		}
 		if value.Type() == vmlib.LuaValueString {
 			fmt.Println("Value is a LuaString:", value.(*vmlib.ValueString).Value().String())
@@ -94,6 +99,8 @@ func main() {
 		}()
 		return nil
 	})
+
+	fmt.Println("Key is a LuaString:", testKey.(*vmlib.ValueString).Value().String())
 
 	err = tab.ForEach(func(key, value vmlib.Value) error {
 		panic("test panic")
@@ -262,11 +269,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Fnction call response", res[0].(*vmlib.ValueString).Value().String())
-	res[0].Close()
+	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
+	defer res[0].Close()
+
+	res, err = myFunc.Call([]vmlib.Value{vmlib.GoString("foo")})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
+	defer res[0].Close()
 
 	myFunc, err = vm.CreateFunction(func(lua *vmlib.GoLuaVmWrapper, args []vmlib.Value) ([]vmlib.Value, error) {
-		return nil, errors.New("test")
+		return nil, errors.New(args[0].(*vmlib.ValueString).Value().String())
 	})
 	if err != nil {
 		panic(err)
@@ -276,9 +290,29 @@ func main() {
 	if err != nil {
 		fmt.Println("function error", err)
 	}
-
-	myFunc.Close()
+	_, err = myFunc.Call([]vmlib.Value{vmlib.NewValueVector(1, 2, 3)})
+	if err != nil {
+		fmt.Println("function error", err)
+	}
 
 	runtime.GC()
 	runtime.GC()
+
+	tab, err = vm.CreateTable()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua table: %v", err))
+	}
+	defer tab.Close() // Ensure we close the Lua table when done
+	err = tab.Set(vmlib.GoString("test"), myFunc.ToValue())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
+	}
+
+	testFn, err := tab.Get(vmlib.GoString("test"))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get value from Lua table: %v", err))
+	}
+	if testFn.Type() != vmlib.LuaValueFunction {
+		panic(fmt.Sprintf("Expected LuaValueFunction, got %d", testFn.Type()))
+	}
 }

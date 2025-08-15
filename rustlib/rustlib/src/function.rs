@@ -23,7 +23,7 @@ pub struct FunctionCallbackData {
 pub extern "C-unwind" fn luago_create_function(ptr: *mut LuaVmWrapper, cb: IGoCallback) -> GoFunctionResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     if ptr.is_null() {
-        return GoFunctionResult::err(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
+        return GoFunctionResult::err("LuaVmWrapper pointer is null".to_string());
     }
 
     let cb_wrapper = IGoCallbackWrapper::new(cb);
@@ -70,14 +70,14 @@ pub extern "C-unwind" fn luago_create_function(ptr: *mut LuaVmWrapper, cb: IGoCa
 
     match func {
         Ok(f) => GoFunctionResult::ok(Box::into_raw(Box::new(f))),
-        Err(err) => GoFunctionResult::err(err),
+        Err(err) => GoFunctionResult::err(format!("{err}")),
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_function_call(ptr: *mut mluau::Function, args: *mut GoMultiValue) -> GoMultiValueResult  {
     if ptr.is_null() {
-        return GoMultiValueResult::err(mluau::Error::external("Function pointer is null".to_string()));
+        return GoMultiValueResult::err("Function pointer is null".to_string());
     }
 
     let func = unsafe { &*ptr };
@@ -89,7 +89,7 @@ pub extern "C-unwind" fn luago_function_call(ptr: *mut mluau::Function, args: *m
     let res = func.call::<mluau::MultiValue>(values_mv);
     match res {
         Ok(mv) => GoMultiValueResult::ok(GoMultiValue::inst(mv)),
-        Err(e) => GoMultiValueResult::err(e)
+        Err(e) => GoMultiValueResult::err(format!("{e}"))
     }
 }
 

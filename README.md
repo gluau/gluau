@@ -10,6 +10,7 @@ gluau provides Go bindings for the Luau (dialect of Lua) programming language
 - Basic Lua value API to abstract over Lua values via Go interfaces
 - Lua Strings (along with API's)
 - Lua Tables (along with API's)
+- Lua Functions (API's are WIP, but basic creating and calling is implemented)
 
 ## Benefits over other libraries
 

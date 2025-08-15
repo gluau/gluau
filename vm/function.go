@@ -51,6 +51,11 @@ func (l *LuaFunction) Call(args []Value) ([]Value, error) {
 	return retsMw, nil
 }
 
+// ToValue converts the LuaFunction to a Value.
+func (l *LuaFunction) ToValue() Value {
+	return &ValueFunction{value: l}
+}
+
 func (l *LuaFunction) Close() {
 	if l == nil || l.object == nil {
 		return // Nothing to close

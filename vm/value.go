@@ -58,6 +58,10 @@ type ValueBoolean struct {
 	value bool
 }
 
+func NewValueBoolean(value bool) *ValueBoolean {
+	return &ValueBoolean{value: value}
+}
+
 // Value returns the boolean value of the ValueBoolean.
 func (v *ValueBoolean) Value() bool {
 	return v.value
@@ -76,6 +80,10 @@ func (v *ValueBoolean) needsClone() bool {
 // ValueLightUserData is a pointer to an arbitrary C data type.
 type ValueLightUserData struct {
 	value unsafe.Pointer
+}
+
+func NewValueLightUserData(value unsafe.Pointer) *ValueLightUserData {
+	return &ValueLightUserData{value: value}
 }
 
 // Value returns the pointer to the light user data.
@@ -100,6 +108,10 @@ type ValueInteger struct {
 	value int64
 }
 
+func NewValueInteger(value int64) *ValueInteger {
+	return &ValueInteger{value: value}
+}
+
 func (v *ValueInteger) Value() int64 {
 	return v.value
 }
@@ -119,6 +131,11 @@ type ValueNumber struct {
 	value float64
 }
 
+func NewValueNumber(value float64) *ValueNumber {
+	return &ValueNumber{value: value}
+}
+
+// Value returns the float64 value of the ValueNumber.
 func (v *ValueNumber) Value() float64 {
 	return v.value
 }
@@ -140,6 +157,11 @@ type ValueVector struct {
 	value [3]float32
 }
 
+func NewValueVector(x, y, z float32) *ValueVector {
+	return &ValueVector{value: [3]float32{x, y, z}}
+}
+
+// Value returns the [3]float32 value of the ValueVector.
 func (v *ValueVector) Value() [3]float32 {
 	return v.value
 }
@@ -159,6 +181,7 @@ type ValueString struct {
 	value *LuaString
 }
 
+// NewValueString creates a new ValueString from a LuaString.
 func (v *ValueString) Value() *LuaString {
 	return v.value
 }
@@ -206,6 +229,9 @@ type ValueFunction struct {
 	value *LuaFunction
 }
 
+func (v *ValueFunction) Value() *LuaFunction {
+	return v.value
+}
 func (v *ValueFunction) Type() LuaValueType {
 	return LuaValueFunction
 }

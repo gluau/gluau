@@ -1,5 +1,4 @@
 use std::ffi::{c_char, CString};
-use mluau::Error;
 
 use crate::{multivalue::GoMultiValue, value::GoLuaValue};
 
@@ -15,11 +14,20 @@ impl GoNoneResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             error: to_error(error),
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_none_result_free(ptr: *mut GoNoneResult) {
+    if ptr.is_null() {
+        return;
+    }
+
+    unsafe { drop(Box::from_raw(ptr)); }
 }
 
 #[repr(C)]
@@ -36,7 +44,7 @@ impl GoBoolResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: false,
             error: to_error(error),
@@ -58,7 +66,7 @@ impl GoI64Result {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: 0,
             error: to_error(error),
@@ -80,7 +88,7 @@ impl GoStringResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
             error: to_error(error),
@@ -102,12 +110,21 @@ impl GoTableResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
             error: to_error(error),
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_tableresult_free(ptr: *mut GoTableResult) {
+    if ptr.is_null() {
+        return;
+    }
+
+    unsafe { drop(Box::from_raw(ptr)); }    
 }
 
 #[repr(C)]
@@ -124,7 +141,7 @@ impl GoFunctionResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
             error: to_error(error),
@@ -146,7 +163,7 @@ impl GoMultiValueResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
             error: to_error(error),
@@ -168,7 +185,7 @@ impl GoValueResult {
         }
     }
 
-    pub fn err(error: Error) -> Self {
+    pub fn err(error: String) -> Self {
         Self {
             value: GoLuaValue::from_owned(mluau::Value::Nil),
             error: to_error(error),
@@ -179,10 +196,10 @@ impl GoValueResult {
 /// Given a error string, return a heap allocated error
 /// 
 /// Useful for API's which have no return
-pub fn to_error(error: Error) -> *mut c_char {
-    let error_str = format!("{error}");
+pub fn to_error(error: String) -> *mut c_char {
+    let error_str = error.replace('\0', ""); // Ensure no null characters in the string
     let error_cstr = CString::new(error_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
-    CString::into_raw(error_cstr) as *mut c_char
+    CString::into_raw(error_cstr)
 }
 
 /// Frees the memory for an error string created by Rust.

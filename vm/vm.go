@@ -43,7 +43,8 @@ func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
 	}
 	res := C.luavm_setmemorylimit(lua, C.size_t(limit))
 	if res.error != nil {
-		return moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return err
 	}
 	return nil
 }
@@ -122,7 +123,8 @@ func (l *GoLuaVmWrapper) CreateTable() (*LuaTable, error) {
 
 	res := C.luago_create_table(lua)
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return nil, err
 	}
 	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
 }
@@ -140,7 +142,8 @@ func (l *GoLuaVmWrapper) CreateTableWithCapacity(narr, nrec int) (*LuaTable, err
 
 	res := C.luago_create_table_with_capacity(lua, C.size_t(narr), C.size_t(nrec))
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		err := moveErrorToGoError(res.error)
+		return nil, err
 	}
 	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
 }
@@ -185,7 +188,7 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 				}
 
 				// Replace
-				errBytes := []byte(fmt.Sprintf("panic in ForEachValue callback: %v", r))
+				errBytes := []byte(fmt.Sprintf("panic in CreateFunction callback: %v", r))
 				errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
 				cval.error = errv // Rust side will deallocate it for us
 			}
