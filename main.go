@@ -354,4 +354,5 @@ func main() {
 	} else {
 		fmt.Println("got ret:", ret[0].(*vmlib.ValueInteger).Value())
 	}
+	luaFunc.Close()
 }
