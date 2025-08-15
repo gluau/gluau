@@ -142,6 +142,20 @@ uintptr_t luago_table_to_pointer(struct LuaTable* ptr);
 char* luago_table_debug(struct LuaTable* ptr);
 void luago_free_table(struct LuaTable* ptr);
 
+// Functions
+struct LuaFunction;
+struct FunctionCallbackData {
+    struct LuaVmWrapper* lua;
+    struct GoMultiValue* args;
+
+    // Go side may set this to set a response
+    struct GoMultiValue* values; // NOTE: Rust will deallocate this
+    struct ErrorVariant *error; // NOTE: Rust will deallocate this
+};
+struct GoFunctionResult luago_create_function(struct LuaVmWrapper* ptr, struct IGoCallback cb);
+struct GoMultiValueResult luago_function_call(struct LuaFunction* ptr, struct GoMultiValue* args);
+void luago_free_function(struct LuaFunction* f);
+
 // Result types
 
 struct GoNoneResult {
@@ -167,6 +181,17 @@ struct GoTableResult {
     // Pointer to a null-terminated C string for the error message
     char* error;
 };
+struct GoFunctionResult {
+    // Pointer to the LuaTable value
+    struct LuaFunction* value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoMultiValueResult {
+    struct GoMultiValue* value;
+    char* error;
+};
+
 struct GoValueResult {
     // The Lua value
     struct GoLuaValue value;
@@ -175,3 +200,12 @@ struct GoValueResult {
 };
 
 // Result types end
+
+// Multivalue handling
+struct GoMultiValue;
+struct GoMultiValue* luago_create_multivalue_with_capacity(size_t capacity);
+void luago_multivalue_push(struct GoMultiValue* mv, struct GoLuaValue value);
+size_t luago_multivalue_len(struct GoMultiValue* mv);
+struct GoLuaValue luago_multivalue_pop(struct GoMultiValue* mv);
+void luago_free_multivalue(struct GoMultiValue* mv);
+// Multivalue handling end

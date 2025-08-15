@@ -1,8 +1,10 @@
 pub mod vm;
 pub mod string;
 pub mod table;
+pub mod function;
 pub mod result;
 pub mod value;
+pub mod multivalue;
 
 use mluau::Lua;
 use std::ffi::c_void;

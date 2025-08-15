@@ -1,7 +1,7 @@
 use std::ffi::{c_char, CString};
 use mluau::Error;
 
-use crate::value::GoLuaValue;
+use crate::{multivalue::GoMultiValue, value::GoLuaValue};
 
 #[repr(C)]
 pub struct GoNoneResult {
@@ -98,6 +98,50 @@ impl GoTableResult {
     pub fn ok(t: *mut mluau::Table) -> Self {
         Self {
             value: t,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GoFunctionResult {
+    value: *mut mluau::Function,
+    error: *mut c_char
+}
+
+impl GoFunctionResult {
+    pub fn ok(f: *mut mluau::Function) -> Self {
+        Self {
+            value: f,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: Error) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GoMultiValueResult {
+    value: *mut GoMultiValue,
+    error: *mut c_char
+}
+
+impl GoMultiValueResult {
+    pub fn ok(f: *mut GoMultiValue) -> Self {
+        Self {
+            value: f,
             error: std::ptr::null_mut(),
         }
     }

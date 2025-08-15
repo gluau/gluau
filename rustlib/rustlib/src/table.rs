@@ -5,7 +5,10 @@ use crate::{result::{GoBoolResult, GoI64Result, GoNoneResult, GoTableResult, GoV
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_create_table(ptr: *mut LuaVmWrapper) -> GoTableResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
-    // and that s points to a valid C string of length len.
+    if ptr.is_null() {
+        return GoTableResult::err(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
+    }
+
     let res = unsafe {
         let lua = &(*ptr).lua;
         lua.create_table()
@@ -20,7 +23,10 @@ pub extern "C-unwind" fn luago_create_table(ptr: *mut LuaVmWrapper) -> GoTableRe
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_create_table_with_capacity(ptr: *mut LuaVmWrapper, narr: usize, nrec: usize) -> GoTableResult  {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
-    // and that s points to a valid C string of length len.
+    if ptr.is_null() {
+        return GoTableResult::err(mluau::Error::external("LuaVmWrapper pointer is null".to_string()));
+    }
+
     let res = unsafe {
         let lua = &(*ptr).lua;
         lua.create_table_with_capacity(narr, nrec)
@@ -110,7 +116,7 @@ pub extern "C-unwind" fn luago_table_foreach(tab: *mut mluau::Table, cb: IGoCall
             value: GoLuaValue::from_owned(value),
             stop: false,
         };
-        // TODO: Avoid the pointer allocation if possible
+
         let ptr = Box::into_raw(Box::new(data));
         cb_wrapper.callback(ptr as *mut c_void);
         let data = unsafe { Box::from_raw(ptr) };

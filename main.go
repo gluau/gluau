@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"time"
@@ -247,4 +248,36 @@ func main() {
 		panic("Lua table should equal itself")
 	}
 	fmt.Println("empty table equals itself", equals)
+
+	myFunc, err := vm.CreateFunction(func(lua *vmlib.GoLuaVmWrapper, args []vmlib.Value) ([]vmlib.Value, error) {
+		return []vmlib.Value{
+			vmlib.GoString("Hello world"),
+		}, nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := myFunc.Call([]vmlib.Value{vmlib.GoString("foo")})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Fnction call response", res[0].(*vmlib.ValueString).Value().String())
+	res[0].Close()
+
+	myFunc, err = vm.CreateFunction(func(lua *vmlib.GoLuaVmWrapper, args []vmlib.Value) ([]vmlib.Value, error) {
+		return nil, errors.New("test")
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = myFunc.Call([]vmlib.Value{vmlib.GoString("foo")})
+	if err != nil {
+		fmt.Println("function error", err)
+	}
+
+	myFunc.Close()
+
+	runtime.GC()
 }

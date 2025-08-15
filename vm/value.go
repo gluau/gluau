@@ -203,17 +203,17 @@ func (v *ValueTable) needsClone() bool {
 }
 
 type ValueFunction struct {
-	value *C.void // TODO
+	value *LuaFunction
 }
 
 func (v *ValueFunction) Type() LuaValueType {
 	return LuaValueFunction
 }
 func (v *ValueFunction) Close() {
-	// TODO: Implement function
+	v.value.Close()
 }
 func (v *ValueFunction) object() *object {
-	return nil // Function has no underlying object
+	return v.value.object
 }
 func (v *ValueFunction) needsClone() bool {
 	return true // Function needs to be cloned to be safely passed to rust
@@ -368,9 +368,10 @@ func (l *GoLuaVmWrapper) valueFromC(item C.struct_GoLuaValue) Value {
 		tab := &LuaTable{object: newObject(tabPtr, tableTab), lua: l}
 		return &ValueTable{value: tab}
 	case C.LuaValueTypeFunction:
-		funcPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
-		funcPtr := *funcPtrPtr
-		return &ValueFunction{value: funcPtr} // TODO: Support functions
+		ptrToPtr := (**C.struct_LuaFunction)(unsafe.Pointer(&item.data))
+		funcPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
+		funct := &LuaFunction{object: newObject(funcPtr, functionTab)}
+		return &ValueFunction{value: funct}
 	case C.LuaValueTypeThread:
 		threadPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
 		threadPtr := *threadPtrPtr
@@ -452,11 +453,12 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueFunction:
 		funcVal := value.(*ValueFunction)
-		if funcVal.value == nil {
-			return cVal, errors.New("cannot convert nil LuaFunction to C value")
+		ptr, err := funcVal.value.object.PointerNoLock()
+		if err != nil {
+			return cVal, errors.New("cannot convert closed LuaFunction to C value")
 		}
 		cVal.tag = C.LuaValueTypeFunction
-		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(funcVal.value)
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueThread:
 		threadVal := value.(*ValueThread)
 		if threadVal.value == nil {
@@ -491,18 +493,15 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		cVal.tag = C.LuaValueTypeOther
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = nil // Return nil
 	case LuaValueCustom_GoString:
+		// This is a temporary string that should not have a finalizer attached to it
 		goStrVal := value.(GoString)
 		// Create a LuaString from the Go string
-		luaString, err := l.CreateString(string(goStrVal))
+		luaString, err := l.createStringAsPtr([]byte(goStrVal))
 		if err != nil {
 			return cVal, err // Return error if the string cannot be created
 		}
 		cVal.tag = C.LuaValueTypeString
-		ptr, err := luaString.object.PointerNoLock()
-		if err != nil {
-			return cVal, errors.New("cannot convert closed LuaString to C value")
-		}
-		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(luaString)
 	default:
 		return cVal, errors.New("unknown Lua value type")
 	}
