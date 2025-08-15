@@ -5,6 +5,8 @@ pub mod function;
 pub mod result;
 pub mod value;
 pub mod multivalue;
+pub mod compiler;
+pub mod chunk;
 
 use mluau::Lua;
 use std::ffi::c_void;

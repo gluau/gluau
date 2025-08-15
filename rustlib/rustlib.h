@@ -4,7 +4,21 @@
 
 struct LuaVmWrapper;
 
+// CompilerOpts API
+
+struct CompilerOpts {
+    // The optimization level for the Lua chunk.
+    uint8_t optimization_level;
+    // The debug level for the Lua chunk.
+    uint8_t debug_level;
+    // The Luau type information level
+    uint8_t type_info_level;
+    // The coverage level to use
+    uint8_t coverage_level;
+};
+
 struct LuaVmWrapper* newluavm();
+void luavm_setcompileropts(struct LuaVmWrapper* ptr, struct CompilerOpts opts);
 struct GoNoneResult luavm_setmemorylimit(struct LuaVmWrapper* ptr, size_t limit);
 void freeluavm(struct LuaVmWrapper* ptr);
 
@@ -209,3 +223,21 @@ size_t luago_multivalue_len(struct GoMultiValue* mv);
 struct GoLuaValue luago_multivalue_pop(struct GoMultiValue* mv);
 void luago_free_multivalue(struct GoMultiValue* mv);
 // Multivalue handling end
+
+// ChunkOpts API
+struct ChunkString;
+struct ChunkString* luago_chunk_string_new(const char* bytes, size_t len);
+
+struct ChunkOpts {
+    // The name of the chunk, used for debugging and error messages.
+    struct ChunkString* name;
+    // The environment table for the chunk.
+    struct LuaTable* env;
+    // The chunks mode (either text or binary).
+    uint8_t mode;
+    // The compiler options for the chunk.
+    struct CompilerOpts* compiler_opts;
+    // The actual code of the chunk.
+    struct ChunkString* code;
+};
+struct GoFunctionResult luago_load_chunk(struct LuaVmWrapper* ptr, struct ChunkOpts opts);

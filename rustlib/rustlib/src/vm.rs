@@ -1,6 +1,6 @@
 use mluau::Lua;
 
-use crate::{result::GoNoneResult, LuaVmWrapper};
+use crate::{compiler::CompilerOpts, result::GoNoneResult, LuaVmWrapper};
 
 // Base functions
 
@@ -19,6 +19,15 @@ pub extern "C-unwind" fn newluavm() -> *mut LuaVmWrapper {
 
     let wrapper = Box::new(LuaVmWrapper { lua });
     Box::into_raw(wrapper)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luavm_setcompileropts(ptr: *mut LuaVmWrapper, opts: CompilerOpts) {
+    if ptr.is_null() {
+        return; // no-op if pointer is null
+    }
+    let lua = unsafe { &(*ptr).lua };
+    lua.set_compiler(opts.to_compiler());
 }
 
 #[unsafe(no_mangle)]

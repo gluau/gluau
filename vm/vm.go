@@ -28,6 +28,22 @@ func (l *GoLuaVmWrapper) lua() (*C.struct_LuaVmWrapper, error) {
 	return (*C.struct_LuaVmWrapper)(unsafe.Pointer(ptr)), nil
 }
 
+// SetCompilerOpts sets the default compiler options for the Lua VM.
+//
+// This is a Luau-specific feature
+func (l *GoLuaVmWrapper) SetCompilerOpts(opts CompilerOpts) {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return // No-op if the Lua VM is closed
+	}
+
+	cOpts := opts.toC()
+	C.luavm_setcompileropts(lua, cOpts)
+}
+
 // SetMemoryLimit sets the memory limit for the Lua VM.
 //
 // Upon exceeding this limit, Luau will return a memory error
@@ -224,7 +240,57 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 	})
 
 	res := C.luago_create_function(lua, cbWrapper.ToC())
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
 
+	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
+}
+
+func (l *GoLuaVmWrapper) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil, err
+	}
+
+	var env *C.struct_LuaTable
+	if opts.Env != nil {
+		defer opts.Env.object.RUnlock()
+		opts.Env.object.RLock()
+		envPtr, err := opts.Env.object.PointerNoLock()
+		if err == nil {
+			env = (*C.struct_LuaTable)(unsafe.Pointer(envPtr))
+		}
+	}
+
+	var compilerOpts *C.struct_CompilerOpts = nil
+	if opts.CompilerOpts != nil {
+		compilerOptsC := opts.CompilerOpts.toC()
+		compilerOpts = &compilerOptsC
+	}
+
+	var name = newChunkString([]byte(opts.Name))
+	var code = newChunkString([]byte(opts.Code))
+
+	res := C.luago_load_chunk(
+		lua,
+		C.struct_ChunkOpts{
+			name:          name,
+			env:           env,
+			mode:          C.uint8_t(opts.Mode),
+			compiler_opts: compilerOpts,
+			code:          code,
+		},
+	)
+
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
 	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
 }
 

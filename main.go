@@ -131,12 +131,12 @@ func main() {
 	if isEmpty {
 		panic("Non-empty Lua table is empty")
 	}
-	len, err := tab.Len()
+	tablen, err := tab.Len()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get Lua table length: %v", err))
 	}
-	if len != 0 {
-		panic("Lua table length should be 0 (as all key-value pairs so no array indices), got " + fmt.Sprint(len))
+	if tablen != 0 {
+		panic("Lua table length should be 0 (as all key-value pairs so no array indices), got " + fmt.Sprint(tablen))
 	}
 	mt := tab.Metatable()
 	if mt != nil {
@@ -153,12 +153,12 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to push value to Lua table: %v", err))
 	}
-	len, err = tab.Len()
+	tablen, err = tab.Len()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get Lua table length after push: %v", err))
 	}
-	if len != 1 {
-		panic("Lua table length should be 1 after push, got " + fmt.Sprint(len))
+	if tablen != 1 {
+		panic("Lua table length should be 1 after push, got " + fmt.Sprint(tablen))
 	}
 	fmt.Printf("Lua table string %s with ptr 0x%x\n", tab, tab.Pointer())
 
@@ -314,5 +314,44 @@ func main() {
 	}
 	if testFn.Type() != vmlib.LuaValueFunction {
 		panic(fmt.Sprintf("Expected LuaValueFunction, got %d", testFn.Type()))
+	}
+
+	// Compiler API
+	vm.SetCompilerOpts(vmlib.CompilerOpts{
+		OptimizationLevel: vmlib.OptimizationLevelFull,
+	})
+	globTab, err := vm.CreateTable()
+	if err != nil {
+		panic("failed to make global table")
+	}
+	err = globTab.Set(vmlib.GoString("a"), vmlib.NewValueInteger(5))
+	if err != nil {
+		panic("failed to set a")
+	}
+	err = globTab.Set(vmlib.GoString("_G"), globTab.ToValue())
+	if err != nil {
+		panic("failed to set _G")
+	}
+	runtime.GC() // testing
+
+	luaFunc, err := vm.LoadChunk(vmlib.ChunkOpts{
+		Code: "_G.a = _G.a + 1; return _G.a",
+		Env:  globTab,
+	})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Lua func: ", luaFunc)
+	ret, err := luaFunc.Call([]vmlib.Value{})
+	if err != nil {
+		panic(err)
+	}
+	if len(ret) != 1 || ret[0].Type() != vmlib.LuaValueInteger {
+		panic("ret is not a single integer")
+	}
+	if ret[0].(*vmlib.ValueInteger).Value() != 6 {
+		panic("ret[0] must be 6")
+	} else {
+		fmt.Println("got ret:", ret[0].(*vmlib.ValueInteger).Value())
 	}
 }

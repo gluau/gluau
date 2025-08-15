@@ -614,6 +614,11 @@ func (l *LuaTable) String() string {
 	return moveErrorToGo(str)
 }
 
+// ToValue converts the LuaTable to a Value.
+func (l *LuaTable) ToValue() Value {
+	return &ValueTable{value: l}
+}
+
 func (l *LuaTable) Close() {
 	if l == nil || l.object == nil {
 		return // Nothing to close
