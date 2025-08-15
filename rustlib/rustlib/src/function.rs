@@ -43,6 +43,7 @@ pub extern "C-unwind" fn luago_create_function(ptr: *mut LuaVmWrapper, cb: IGoCa
         let ptr = Box::into_raw(Box::new(data));
         cb_wrapper.callback(ptr as *mut c_void);
         let data = unsafe { Box::from_raw(ptr) };
+        unsafe { drop(Box::from_raw(data.args)) }
         
         if !data.error.is_null() {
             if !data.values.is_null() {

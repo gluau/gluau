@@ -146,7 +146,7 @@ void luago_free_table(struct LuaTable* ptr);
 struct LuaFunction;
 struct FunctionCallbackData {
     struct LuaVmWrapper* lua;
-    struct GoMultiValue* args;
+    struct GoMultiValue* args; // NOTE: Rust will deallocate this
 
     // Go side may set this to set a response
     struct GoMultiValue* values; // NOTE: Rust will deallocate this

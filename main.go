@@ -280,4 +280,5 @@ func main() {
 	myFunc.Close()
 
 	runtime.GC()
+	runtime.GC()
 }
