@@ -82,7 +82,6 @@ pub extern "C-unwind" fn luago_string_to_pointer(string: *mut mluau::String) -> 
     let lua_string = unsafe { &*string };
 
     let ptr = lua_string.to_pointer();
-    println!("Lua string pointer: {:?}", ptr);
 
     ptr as usize
 }

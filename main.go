@@ -152,6 +152,38 @@ func main() {
 	if len != 1 {
 		panic("Lua table length should be 1 after push, got " + fmt.Sprint(len))
 	}
+	fmt.Printf("Lua table string %s with ptr 0x%x\n", tab, tab.Pointer())
+
+	// Create a new Lua table to act as this table's metatable
+	myNewMt, err := vm.CreateTable()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua table for metatable: %v", err))
+	}
+	// Set the metatable for the Lua table
+	err = tab.SetMetatable(myNewMt)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to set metatable for Lua table: %v", err))
+	}
+	mt = tab.Metatable()
+	if mt == nil {
+		panic("Lua table should have a metatable after setting it")
+	}
+	doesItEqual, err := mt.Equals(myNewMt)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to check if Lua table metatable equals another: %v", err))
+	}
+	if !doesItEqual {
+		panic("Lua table metatable does not match the one we set")
+	}
+	err = tab.SetMetatable(nil)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to unset metatable for Lua table: %v", err))
+	}
+	mt = tab.Metatable()
+	if mt != nil {
+		panic("Lua table should not have a metatable after unsetting it")
+	}
+
 	// IMPORTANT
 	val[0].Close()
 	val[1].Close()

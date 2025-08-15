@@ -121,6 +121,25 @@ struct GoI64Result luago_table_len(struct LuaTable* ptr);
 struct LuaTable* luago_table_metatable(struct LuaTable* ptr);
 struct GoValueResult luago_table_pop(struct LuaTable* ptr);
 struct GoNoneResult luago_table_push(struct LuaTable* ptr, struct GoLuaValue value);
+struct GoValueResult luago_table_raw_get(struct LuaTable* ptr, struct GoLuaValue key);
+struct GoNoneResult luago_table_raw_insert(struct LuaTable* ptr, int64_t idx, struct GoLuaValue value);
+size_t luago_table_raw_len(struct LuaTable* ptr);
+struct GoValueResult luago_table_raw_pop(struct LuaTable* ptr);
+struct GoNoneResult luago_table_raw_push(struct LuaTable* ptr, struct GoLuaValue value);
+struct GoNoneResult luago_table_raw_remove(struct LuaTable* ptr, struct GoLuaValue key);
+struct GoNoneResult luago_table_raw_set(struct LuaTable* ptr, struct GoLuaValue key, struct GoLuaValue value);
+struct GoNoneResult luago_table_set(struct LuaTable* ptr, struct GoLuaValue key, struct GoLuaValue value);
+struct TableForEachValueCallbackData {
+    struct GoLuaValue value;
+    // Go code may modify the below
+    bool stop;
+};
+struct GoNoneResult luago_table_foreach_value(struct LuaTable* ptr, struct IGoCallback cb);
+struct GoNoneResult luago_table_set_metatable(struct LuaTable* ptr, struct LuaTable* mt);
+void luago_table_set_readonly(struct LuaTable* ptr, bool enabled);
+void luago_table_set_safeenv(struct LuaTable* ptr, bool enabled);
+uintptr_t luago_table_to_pointer(struct LuaTable* ptr);
+char* luago_table_debug(struct LuaTable* ptr);
 void luago_free_table(struct LuaTable* ptr);
 
 // Result types
