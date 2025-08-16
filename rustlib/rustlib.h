@@ -170,6 +170,16 @@ struct GoFunctionResult luago_create_function(struct LuaVmWrapper* ptr, struct I
 struct GoMultiValueResult luago_function_call(struct LuaFunction* ptr, struct GoMultiValue* args);
 void luago_free_function(struct LuaFunction* f);
 
+// Userdata API
+struct LuaUserData;
+struct DynamicData {
+    uint64_t handle; // cgo handle to the data
+    DropCallback drop; // cgo drop callback
+};
+struct GoUserDataResult luago_create_userdata(struct LuaVmWrapper* ptr, struct DynamicData data, struct LuaTable* mt);
+struct GoUsizePtrResult luago_get_userdata_handle(struct LuaUserData* ptr);
+void luago_free_userdata(struct LuaUserData* ptr);
+
 // Result types
 
 struct GoNoneResult {
@@ -181,6 +191,10 @@ struct GoBoolResult {
 };
 struct GoI64Result {
     int64_t value;
+    char* error;
+};
+struct GoUsizePtrResult {
+    uintptr_t value;
     char* error;
 };
 struct GoStringResult {
@@ -198,6 +212,12 @@ struct GoTableResult {
 struct GoFunctionResult {
     // Pointer to the LuaTable value
     struct LuaFunction* value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoUserDataResult {
+    // Pointer to the LuaUserData value
+    struct LuaUserData* value;
     // Pointer to a null-terminated C string for the error message
     char* error;
 };

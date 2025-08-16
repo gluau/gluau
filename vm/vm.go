@@ -248,6 +248,7 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
 }
 
+// LoadChunk loads a Lua chunk from the given options.
 func (l *GoLuaVmWrapper) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
@@ -292,6 +293,42 @@ func (l *GoLuaVmWrapper) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 		return nil, err
 	}
 	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
+}
+
+// CreateUserData creates a LuaUserData with associated data and a metatable.
+func (l *GoLuaVmWrapper) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, error) {
+	if mt == nil {
+		return nil, fmt.Errorf("metatable cannot be nil")
+	}
+
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil, err
+	}
+
+	defer mt.object.RUnlock()
+	mt.object.RLock()
+	mtPtr, err := mt.object.PointerNoLock()
+	if err != nil {
+		return nil, err // Return error if the metatable is closed
+	}
+
+	dynData := newDynamicData(associatedData, func() {
+		fmt.Println("dynamic data is being dropped")
+	})
+	cDynData := dynData.ToC()
+	res := C.luago_create_userdata(lua, cDynData, (*C.struct_LuaTable)(unsafe.Pointer(mtPtr)))
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
+	return &LuaUserData{
+		lua:    l,
+		object: newObject((*C.void)(unsafe.Pointer(res.value)), userdataTab),
+	}, nil
 }
 
 func (l *GoLuaVmWrapper) DebugValue() [4]Value {

@@ -75,6 +75,28 @@ impl GoI64Result {
 }
 
 #[repr(C)]
+pub struct GoUsizePtrResult {
+    value: usize,
+    error: *mut c_char
+}
+
+impl GoUsizePtrResult {
+    pub fn ok(v: usize) -> Self {
+        Self {
+            value: v,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: String) -> Self {
+        Self {
+            value: 0,
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
 pub struct GoStringResult {
     value: *mut mluau::String,
     error: *mut c_char
@@ -135,6 +157,28 @@ pub struct GoFunctionResult {
 
 impl GoFunctionResult {
     pub fn ok(f: *mut mluau::Function) -> Self {
+        Self {
+            value: f,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: String) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct GoAnyUserDataResult {
+    value: *mut mluau::AnyUserData,
+    error: *mut c_char
+}
+
+impl GoAnyUserDataResult {
+    pub fn ok(f: *mut mluau::AnyUserData) -> Self {
         Self {
             value: f,
             error: std::ptr::null_mut(),

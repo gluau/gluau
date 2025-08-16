@@ -263,17 +263,17 @@ func (v *ValueThread) needsClone() bool {
 }
 
 type ValueUserData struct {
-	value *C.void // TODO
+	value *LuaUserData
 }
 
 func (v *ValueUserData) Type() LuaValueType {
 	return LuaValueUserData
 }
 func (v *ValueUserData) Close() {
-	// TODO: Implement user data
+	v.value.Close() // Close the LuaUserData
 }
 func (v *ValueUserData) object() *object {
-	return nil // UserData has no underlying object
+	return v.value.object // Return the underlying object of the LuaUserData
 }
 func (v *ValueUserData) needsClone() bool {
 	return true // UserData needs to be cloned to be safely passed to rust
@@ -403,9 +403,10 @@ func (l *GoLuaVmWrapper) valueFromC(item C.struct_GoLuaValue) Value {
 		threadPtr := *threadPtrPtr
 		return &ValueThread{value: threadPtr} // TODO: Support threads
 	case C.LuaValueTypeUserData:
-		userDataPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
-		userDataPtr := *userDataPtrPtr
-		return &ValueUserData{value: userDataPtr} // TODO: Support user data
+		ptrToPtr := (**C.struct_LuaUserData)(unsafe.Pointer(&item.data))
+		udPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
+		udt := &LuaUserData{object: newObject(udPtr, userdataTab)}
+		return &ValueUserData{value: udt}
 	case C.LuaValueTypeBuffer:
 		bufferPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
 		bufferPtr := *bufferPtrPtr
@@ -493,12 +494,13 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		cVal.tag = C.LuaValueTypeThread
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(threadVal.value)
 	case LuaValueUserData:
-		userDataVal := value.(*ValueUserData)
-		if userDataVal.value == nil {
-			return cVal, errors.New("cannot convert nil LuaUserData to C value")
+		udVal := value.(*ValueUserData)
+		ptr, err := udVal.value.object.PointerNoLock()
+		if err != nil {
+			return cVal, errors.New("cannot convert closed LuaUserData to C value")
 		}
 		cVal.tag = C.LuaValueTypeUserData
-		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(userDataVal.value)
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueBuffer:
 		bufferVal := value.(*ValueBuffer)
 		if bufferVal.value == nil {

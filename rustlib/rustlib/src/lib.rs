@@ -7,6 +7,7 @@ pub mod value;
 pub mod multivalue;
 pub mod compiler;
 pub mod chunk;
+pub mod userdata;
 
 use mluau::Lua;
 use std::ffi::c_void;

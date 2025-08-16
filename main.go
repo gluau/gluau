@@ -355,4 +355,28 @@ func main() {
 		fmt.Println("got ret:", ret[0].(*vmlib.ValueInteger).Value())
 	}
 	luaFunc.Close()
+
+	udMt, err := vm.CreateTable()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua table for userdata metatable: %v", err))
+	}
+	// Set the __type
+	err = udMt.Set(vmlib.GoString("__type"), vmlib.GoString("MyUserDataType"))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to set __type in Lua userdata metatable: %v", err))
+	}
+
+	ud, err := vm.CreateUserData("test data", udMt)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua user data: %v", err))
+	}
+	fmt.Println("Lua user data created successfully:", ud)
+	associatedData, err := ud.AssociatedData()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get associated data from Lua user data: %v", err))
+	}
+	fmt.Println("Associated data from Lua user data:", associatedData)
+	if associatedData != "test data" {
+		panic(fmt.Sprintf("Expected associated data 'test data', got '%v'", associatedData))
+	}
 }

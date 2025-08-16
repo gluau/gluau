@@ -10,6 +10,7 @@ import (
 
 void goCallbackTrampoline(void* val, void* handle);
 void goDropTrampoline(void* handle);
+void dynDropTrampoline(void* handle);
 */
 import "C"
 
@@ -78,6 +79,72 @@ func (cb *goCallback) ToC() C.struct_IGoCallback {
 		callback: C.Callback(C.goCallbackTrampoline),
 		drop:     C.DropCallback(C.goDropTrampoline),
 		handle:   C.uintptr_t(cb.cgoHandle),
+	}
+	return callback
+}
+
+// dynamicData is a struct that holds an associated Go pointer
+// for userdata
+type dynamicData struct {
+	// A drop function to clean up the callback.
+	drop func()
+	// The actual data value
+	data any
+	// cgo.Handle is used to safely pass Go functions to C.
+	cgoHandle cgo.Handle
+}
+
+func newDynamicData(value any, ondrop func()) *dynamicData {
+	dynData := &dynamicData{
+		drop: ondrop,
+		data: value,
+	}
+	cgoHandle := cgo.NewHandle(dynData)
+	dynData.cgoHandle = cgoHandle
+	return dynData
+}
+
+// Returns the dynamic data as a Go value.
+func getDynamicData(handle uintptr) any {
+	h := cgo.Handle(handle)
+	if h == cgo.Handle(0) {
+		return nil // Handle is invalid, nothing to do
+	}
+	dynData := h.Value().(*dynamicData)
+	return dynData.data
+}
+
+//export dynDropTrampoline
+func dynDropTrampoline(handle unsafe.Pointer) {
+	h := cgo.Handle(handle)
+	dynData := h.Value().(*dynamicData)
+	if dynData == nil || dynData.cgoHandle == cgo.Handle(0) {
+		return // Handle is invalid, nothing to do
+	}
+	dynData.Drop()
+}
+
+func (dyn *dynamicData) Drop() {
+	if dyn == nil || dyn.cgoHandle == cgo.Handle(0) {
+		return
+	}
+	if dyn.drop != nil {
+		dyn.drop() // Call the drop function if it exists
+	}
+	dyn.cgoHandle.Delete()        // This will call the finalizer and clean up the callback
+	dyn.data = nil                // Clear the data reference to allow it to be garbage collected
+	dyn.drop = nil                // Clear the drop function
+	dyn.cgoHandle = cgo.Handle(0) // Mark the handle as invalid
+}
+
+func (cb *dynamicData) ToC() C.struct_DynamicData {
+	if cb == nil || cb.cgoHandle == cgo.Handle(0) {
+		panic("dynamicData is nil or already dropped")
+	}
+	// Create the DynamicData struct to pass to Rust
+	callback := C.struct_DynamicData{
+		drop:   C.DropCallback(C.dynDropTrampoline),
+		handle: C.uintptr_t(cb.cgoHandle),
 	}
 	return callback
 }
