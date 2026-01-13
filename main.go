@@ -13,9 +13,9 @@ import (
 	"time"
 
 	// Import to ensure callback package is initialized
-	vmlib "github.com/gluau/gluau/vm"
-	"github.com/gluau/gluau/vmutils"
-	"github.com/gluau/gluau/vmutils/require"
+	vmlib "github.com/koeng101/gluau/vm"
+	"github.com/koeng101/gluau/vmutils"
+	"github.com/koeng101/gluau/vmutils/require"
 )
 
 // #include <stdlib.h>

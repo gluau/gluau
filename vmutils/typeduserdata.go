@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gluau/gluau/vm"
+	"github.com/koeng101/gluau/vm"
 )
 
 // Ergonomic userdata handling

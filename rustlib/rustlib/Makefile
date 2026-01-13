@@ -10,3 +10,7 @@ build_windows_amd64:
 
 build_normal:
 	cargo build -vvv
+
+build_linux_amd64_musl:
+	cargo build --release -vvv --target x86_64-unknown-linux-musl
+	strip --strip-debug ../../target/x86_64-unknown-linux-musl/release/librustlib.a

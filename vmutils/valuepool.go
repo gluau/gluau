@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gluau/gluau/vm"
+	"github.com/koeng101/gluau/vm"
 )
 
 // A ValuePool stores a Value and allows for cloning it

@@ -18,6 +18,10 @@ distlib:
 	$(MAKE) -C rustlib/rustlib build_windows_amd64
 	cp target/x86_64-pc-windows-gnu/release/librustlib.a rustlib/librustlib_windows_amd64.a
 
+distlib_musl:
+	$(MAKE) -C rustlib/rustlib build_linux_amd64_musl
+	cp target/x86_64-unknown-linux-musl/release/librustlib.a rustlib/librustlib_linux_amd64_musl.a
+
 build:
 	go build -o go-rust
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o go-rust-linux-amd64
