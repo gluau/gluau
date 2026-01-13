@@ -74,10 +74,6 @@ pub extern "C" fn newluavm(stdlib: u32) -> *mut mluau::Lua {
             .disable_error_userdata(true)
         ).unwrap(); // Will never error, as we are using safe libraries only.
 
-        lua.set_on_close(|| {
-            println!("Lua VM is being closed");
-        });
-
         let wrapper = Box::new(lua);
         Box::into_raw(wrapper)
     })
@@ -351,6 +347,92 @@ pub extern "C" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c
         match lua.named_registry_value::<mluau::Value>(key) {
             Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
             Err(err) => GoValueResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_set_instruction_limit(ptr: *mut mluau::Lua, limit: u64) -> GoNoneResult {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return GoNoneResult::err("Lua pointer is null".to_string());
+        }
+        let lua = unsafe { &*ptr };
+        let counter = std::sync::atomic::AtomicU64::new(0);
+
+        lua.set_interrupt(move |_| {
+            let count = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if count >= limit {
+                return Err(mluau::Error::external("instruction limit exceeded"));
+            }
+            Ok(mluau::VmState::Continue)
+        });
+        GoNoneResult::ok()
+    })
+}
+
+/// A token that can be used to cancel execution from another thread.
+pub struct CancellationToken {
+    cancelled: std::sync::atomic::AtomicBool,
+    counter: std::sync::atomic::AtomicU64,
+    limit: u64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_set_instruction_limit_with_cancel(
+    ptr: *mut mluau::Lua,
+    limit: u64,
+) -> *mut CancellationToken {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let lua = unsafe { &*ptr };
+
+        let token = Box::new(CancellationToken {
+            cancelled: std::sync::atomic::AtomicBool::new(false),
+            counter: std::sync::atomic::AtomicU64::new(0),
+            limit,
+        });
+        let token_ptr = Box::into_raw(token);
+
+        // Safety: token_ptr is valid for the lifetime of the interrupt
+        let token_ref = unsafe { &*token_ptr };
+
+        lua.set_interrupt(move |_| {
+            if token_ref.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(mluau::Error::external("execution cancelled"));
+            }
+            let count = token_ref.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if count >= token_ref.limit {
+                return Err(mluau::Error::external("instruction limit exceeded"));
+            }
+            Ok(mluau::VmState::Continue)
+        });
+
+        token_ptr
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_cancel_execution(token: *mut CancellationToken) {
+    wrap_failable(|| {
+        if token.is_null() {
+            return;
+        }
+        let token = unsafe { &*token };
+        token.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_free_cancellation_token(token: *mut CancellationToken) {
+    wrap_failable(|| {
+        if token.is_null() {
+            return;
+        }
+        unsafe {
+            drop(Box::from_raw(token));
         }
     })
 }

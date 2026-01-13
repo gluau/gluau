@@ -153,9 +153,7 @@ func (l *LuaTable) ForEach(fn TableForEachFn) error {
 			errv = err               // Capture the error to return it later
 			cval.stop = C.bool(true) // Stop the iteration
 		}
-	}, func() {
-		fmt.Println("foreach callback is being dropped")
-	})
+	}, nil)
 
 	res := C.luago_table_foreach(ptr, cbWrapper.ToC())
 	if res.error != nil {
@@ -205,9 +203,7 @@ func (l *LuaTable) ForEachValue(fn TableForEachValueFn) error {
 			errv = err               // Capture the error to return it later
 			cval.stop = C.bool(true) // Stop the iteration
 		}
-	}, func() {
-		fmt.Println("foreachvalue callback is being dropped")
-	})
+	}, nil)
 
 	res := C.luago_table_foreach_value(ptr, cbWrapper.ToC())
 	if res.error != nil {

@@ -34,6 +34,12 @@ func main() {
 	fmt.Println("=== Gluau vs Gopher-Lua Benchmark ===")
 	fmt.Println()
 
+	// Startup benchmarks
+	benchmarkStartup()
+	benchmarkStartupMinimal()
+	benchmarkHotLoad()
+	benchmarkHotLoadComplex()
+
 	// Benchmark 1: Fibonacci (recursive, tests function call overhead)
 	benchmarkFibonacci()
 
@@ -48,6 +54,133 @@ func main() {
 
 	// Benchmark 5: Table operations
 	benchmarkTables()
+}
+
+func benchmarkStartup() {
+	fmt.Println("--- VM Startup (full stdlib) ---")
+	const iterations = 10000
+
+	// Gluau
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		luavm, _ := vm.CreateLuaVm()
+		luavm.Close()
+	}
+	gluauTime := time.Since(start)
+	fmt.Printf("Gluau:      %v (%d iterations, %v/op)\n", gluauTime, iterations, gluauTime/iterations)
+
+	// Gopher-lua
+	start = time.Now()
+	for i := 0; i < iterations; i++ {
+		L := lua.NewState()
+		L.Close()
+	}
+	gopherTime := time.Since(start)
+	fmt.Printf("Gopher-Lua: %v (%d iterations, %v/op)\n", gopherTime, iterations, gopherTime/iterations)
+
+	printSpeedup(gluauTime, gopherTime)
+	fmt.Println()
+}
+
+func benchmarkStartupMinimal() {
+	fmt.Println("--- VM Startup (no stdlib) ---")
+	const iterations = 10000
+
+	// Gluau
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		luavm, _ := vm.CreateLuaVmComplex(0)
+		luavm.Close()
+	}
+	gluauTime := time.Since(start)
+	fmt.Printf("Gluau:      %v (%d iterations, %v/op)\n", gluauTime, iterations, gluauTime/iterations)
+
+	// Gopher-lua
+	start = time.Now()
+	for i := 0; i < iterations; i++ {
+		L := lua.NewState(lua.Options{SkipOpenLibs: true})
+		L.Close()
+	}
+	gopherTime := time.Since(start)
+	fmt.Printf("Gopher-Lua: %v (%d iterations, %v/op)\n", gopherTime, iterations, gopherTime/iterations)
+
+	printSpeedup(gluauTime, gopherTime)
+	fmt.Println()
+}
+
+func benchmarkHotLoad() {
+	fmt.Println("--- Hot Load (create VM + load + exec + close) ---")
+	const iterations = 10000
+	code := `return 1 + 1`
+
+	// Gluau
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		luavm, _ := vm.CreateLuaVm()
+		chunk, _ := luavm.LoadChunk(vm.ChunkOpts{Name: "hot", Code: code})
+		results, _ := chunk.Call()
+		for _, r := range results {
+			r.Close()
+		}
+		chunk.Close()
+		luavm.Close()
+	}
+	gluauTime := time.Since(start)
+	fmt.Printf("Gluau:      %v (%d iterations, %v/op)\n", gluauTime, iterations, gluauTime/iterations)
+
+	// Gopher-lua
+	start = time.Now()
+	for i := 0; i < iterations; i++ {
+		L := lua.NewState()
+		L.DoString(code)
+		L.Pop(1)
+		L.Close()
+	}
+	gopherTime := time.Since(start)
+	fmt.Printf("Gopher-Lua: %v (%d iterations, %v/op)\n", gopherTime, iterations, gopherTime/iterations)
+
+	printSpeedup(gluauTime, gopherTime)
+	fmt.Println()
+}
+
+func benchmarkHotLoadComplex() {
+	fmt.Println("--- Hot Load Complex (100 iter loop) ---")
+	const iterations = 5000
+	code := `
+		local function add(a, b) return a + b end
+		local sum = 0
+		for i = 1, 100 do sum = add(sum, i) end
+		return sum
+	`
+
+	// Gluau
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		luavm, _ := vm.CreateLuaVm()
+		chunk, _ := luavm.LoadChunk(vm.ChunkOpts{Name: "hot", Code: code})
+		results, _ := chunk.Call()
+		for _, r := range results {
+			r.Close()
+		}
+		chunk.Close()
+		luavm.Close()
+	}
+	gluauTime := time.Since(start)
+	fmt.Printf("Gluau:      %v (%d iterations, %v/op)\n", gluauTime, iterations, gluauTime/iterations)
+
+	// Gopher-lua
+	start = time.Now()
+	for i := 0; i < iterations; i++ {
+		L := lua.NewState()
+		L.DoString(code)
+		L.Pop(1)
+		L.Close()
+	}
+	gopherTime := time.Since(start)
+	fmt.Printf("Gopher-Lua: %v (%d iterations, %v/op)\n", gopherTime, iterations, gopherTime/iterations)
+
+	printSpeedup(gluauTime, gopherTime)
+	fmt.Println()
 }
 
 func benchmarkFibonacci() {

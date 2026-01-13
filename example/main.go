@@ -7,8 +7,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/koeng101/gluau/vm"
 )
@@ -20,6 +22,18 @@ func main() {
 		log.Fatal("Failed to create Luau VM:", err)
 	}
 	defer lua.Close()
+
+	// Set resource limits for running untrusted code safely
+	// Memory limit: 1MB
+	err = lua.SetMemoryLimit(1 * 1024 * 1024)
+	if err != nil {
+		log.Fatal("Failed to set memory limit:", err)
+	}
+	// Instruction limit: 1 million (prevents infinite loops)
+	err = lua.SetInstructionLimit(1_000_000)
+	if err != nil {
+		log.Fatal("Failed to set instruction limit:", err)
+	}
 
 	// Create a Go function that appends strings
 	// This will be called from Luau
@@ -98,5 +112,63 @@ func main() {
 	// Clean up results
 	for _, r := range results {
 		r.Close()
+	}
+
+	// Example: Running untrusted code with a timeout
+	fmt.Println()
+	fmt.Println("=== Running untrusted code with timeout ===")
+	runWithTimeout()
+}
+
+// runWithTimeout demonstrates running untrusted Luau code with resource limits and a timeout
+func runWithTimeout() {
+	lua, err := vm.CreateLuaVm()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer lua.Close()
+
+	// Set resource limits
+	lua.SetMemoryLimit(1 * 1024 * 1024) // 1MB memory limit
+
+	// Instruction limit with cancellation token for timeout support
+	token, err := lua.SetInstructionLimitWithCancel(100_000_000)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer token.Close()
+
+	// This code would run forever without limits
+	code := `
+		local i = 0
+		while true do
+			i = i + 1
+		end
+		return i
+	`
+
+	chunk, err := lua.LoadChunk(vm.ChunkOpts{Name: "untrusted", Code: code})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer chunk.Close()
+
+	// Run with 100ms timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := chunk.Call()
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		fmt.Printf("Completed with: %v\n", err)
+	case <-ctx.Done():
+		token.Cancel() // Signal graceful stop
+		err := <-done  // Wait for clean termination
+		fmt.Printf("Timed out and cancelled: %v\n", err)
 	}
 }

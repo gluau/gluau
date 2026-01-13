@@ -78,6 +78,72 @@ func (l *Lua) SetMemoryLimit(limit int) error {
 	return nil
 }
 
+// SetInstructionLimit sets an instruction limit for the Lua VM.
+//
+// The VM will stop execution with an error when the limit is exceeded.
+// This is useful for preventing infinite loops in untrusted code.
+// The counting happens in Rust with no CGO overhead per instruction.
+func (l *Lua) SetInstructionLimit(limit uint64) error {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return err
+	}
+	res := C.luago_set_instruction_limit(lua, C.uint64_t(limit))
+	if res.error != nil {
+		return moveErrorToGo(res.error)
+	}
+	return nil
+}
+
+// CancellationToken allows cancelling Lua execution from another goroutine.
+// Must be closed with Close() when no longer needed.
+type CancellationToken struct {
+	ptr *C.struct_CancellationToken
+}
+
+// SetInstructionLimitWithCancel sets an instruction limit and returns a CancellationToken.
+//
+// The token can be used to cancel execution from another goroutine by calling Cancel().
+// This provides both instruction limiting and timeout-based cancellation with graceful
+// termination at the next interrupt point (loop iteration or function call).
+//
+// The token must be closed with Close() when no longer needed.
+func (l *Lua) SetInstructionLimitWithCancel(limit uint64) (*CancellationToken, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil, err
+	}
+	ptr := C.luago_set_instruction_limit_with_cancel(lua, C.uint64_t(limit))
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to set instruction limit with cancel")
+	}
+	return &CancellationToken{ptr: ptr}, nil
+}
+
+// Cancel signals the Lua VM to stop execution at the next interrupt point.
+// This is safe to call from another goroutine.
+func (t *CancellationToken) Cancel() {
+	if t == nil || t.ptr == nil {
+		return
+	}
+	C.luago_cancel_execution(t.ptr)
+}
+
+// Close frees the cancellation token. Must be called when done.
+func (t *CancellationToken) Close() {
+	if t == nil || t.ptr == nil {
+		return
+	}
+	C.luago_free_cancellation_token(t.ptr)
+	t.ptr = nil
+}
+
 // UsedMemory returns the amount of memory used by the Lua VM.
 func (l *Lua) UsedMemory() int {
 	l.object.RLock()
@@ -355,9 +421,7 @@ func (l *Lua) SetInterrupt(callback InterruptFn) {
 		}
 
 		cval.vm_state = C.uint8_t(vmState)
-	}, func() {
-		fmt.Println("interrupt callback is being dropped")
-	})
+	}, nil)
 
 	C.luago_set_interrupt(lua, cbWrapper.ToC())
 }
@@ -560,9 +624,7 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 		}
 
 		cval.values = outMw.ptr // Rust will deallocate values as well
-	}, func() {
-		fmt.Println("function callback is being dropped")
-	})
+	}, nil)
 
 	res := C.luago_create_function(lua, cbWrapper.ToC())
 	if res.error != nil {
@@ -710,9 +772,7 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 		return nil, err // Return error if the metatable is closed
 	}
 
-	dynData := newDynamicData(associatedData, func() {
-		fmt.Println("dynamic data is being dropped")
-	})
+	dynData := newDynamicData(associatedData, nil)
 	cDynData := dynData.ToC()
 	res := C.luago_create_userdata(lua, cDynData, mtPtr)
 	if res.error != nil {

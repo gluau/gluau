@@ -33,19 +33,16 @@ func (n *NavigationResult) fillC(c *C.struct_GoNavigationResult) {
 
 // Returns a new ambiguous navigation result
 func AmbiguousNavigationResult() *NavigationResult {
-	fmt.Println("Creating ambiguous navigation result")
 	return &NavigationResult{ambiguous: true}
 }
 
 // Returns a new not found navigation result
 func NotFoundNavigationResult() *NavigationResult {
-	fmt.Println("Creating not found navigation result")
 	return &NavigationResult{notfound: true}
 }
 
 // Returns a new other navigation result with the given error
 func OtherNavigationResult(err error) *NavigationResult {
-	fmt.Println("Creating other navigation result with error:", err)
 	return &NavigationResult{other: err}
 }
 
@@ -117,15 +114,12 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		cval := (*C.struct_IsRequireAllowed)(val)
 		defer func() {
 			if r := recover(); r != nil {
-				fmt.Println("panic in isRequireAllowed callback:", r)
 				cval.data = false // Requires are not allowed if we panic
 			}
 		}()
 		chunkname := moveStringToGo(cval.chunk_name)
 		cval.data = C.bool(require.IsRequireAllowed(chunkname))
-	}, func() {
-		fmt.Println("isRequireAllowed is being dropped")
-	})
+	}, nil)
 
 	reset := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_ResetOrJumpToAliasOrToChild)(val)
@@ -137,9 +131,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		}()
 		chunkname := moveStringToGo(cval.str)
 		require.Reset(chunkname).fillC(&cval.data)
-	}, func() {
-		fmt.Println("reset is being dropped")
-	})
+	}, nil)
 
 	jumpToAlias := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_ResetOrJumpToAliasOrToChild)(val)
@@ -151,9 +143,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		}()
 		path := moveStringToGo(cval.str)
 		require.JumpToAlias(path).fillC(&cval.data)
-	}, func() {
-		fmt.Println("jumpToAlias is being dropped")
-	})
+	}, nil)
 
 	toParent := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_ToParent)(val)
@@ -164,9 +154,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 			}
 		}()
 		require.ToParent().fillC(&cval.data)
-	}, func() {
-		fmt.Println("toParent is being dropped")
-	})
+	}, nil)
 
 	toChild := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_ResetOrJumpToAliasOrToChild)(val)
@@ -178,48 +166,37 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		}()
 		name := moveStringToGo(cval.str)
 		require.ToChild(name).fillC(&cval.data)
-	}, func() {
-		fmt.Println("toChild is being dropped")
-	})
+	}, nil)
 
 	hasModule := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_HasModuleOrHasConfig)(val)
 		defer func() {
 			if r := recover(); r != nil {
-				fmt.Println("panic in hasModule callback:", r)
 				cval.data = C.bool(false) // If we panic, we assume no module
 			}
 		}()
 		cval.data = C.bool(require.HasModule())
-	}, func() {
-		fmt.Println("hasModule is being dropped")
-	})
+	}, nil)
 
 	cacheKey := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_CacheKey)(val)
 		defer func() {
 			if r := recover(); r != nil {
-				fmt.Println("panic in cacheKey callback:", r)
 				cval.data = moveStringToRust("")
 			}
 		}()
 		cval.data = moveStringToRust(require.CacheKey())
-	}, func() {
-		fmt.Println("cacheKey is being dropped")
-	})
+	}, nil)
 
 	hasConfig := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_HasModuleOrHasConfig)(val)
 		defer func() {
 			if r := recover(); r != nil {
-				fmt.Println("panic in hasConfig callback:", r)
 				cval.data = C.bool(false) // If we panic, we assume no module
 			}
 		}()
 		cval.data = C.bool(require.HasConfig())
-	}, func() {
-		fmt.Println("hasConfig is being dropped")
-	})
+	}, nil)
 
 	config := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_Config)(val)
@@ -234,9 +211,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 			return
 		}
 		cval.data = moveBytesToRust(bytes)
-	}, func() {
-		fmt.Println("config is being dropped")
-	})
+	}, nil)
 
 	loader := newGoCallback(func(val unsafe.Pointer) {
 		cval := (*C.struct_Loader)(val)
@@ -275,9 +250,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		}
 
 		cval.function = (*C.struct_LuaFunction)(unsafe.Pointer(ptr))
-	}, func() {
-		fmt.Println("loader is being dropped")
-	})
+	}, nil)
 
 	res := C.luago_create_require_function(lua, C.struct_GoRequire{
 		is_require_allowed: isRequireAllowed.ToC(),

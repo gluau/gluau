@@ -27,6 +27,11 @@ struct LuaTable* luago_globals(struct Lua* ptr);
 struct GoNoneResult luago_setglobals(struct Lua* ptr, struct LuaTable* globals);
 struct LuaThread* luago_current_thread(struct Lua* ptr);
 void luago_set_type_metatable(struct Lua* ptr, uint8_t typ, struct LuaTable* mt);
+struct GoNoneResult luago_set_instruction_limit(struct Lua* ptr, uint64_t limit);
+struct CancellationToken;
+struct CancellationToken* luago_set_instruction_limit_with_cancel(struct Lua* ptr, uint64_t limit);
+void luago_cancel_execution(struct CancellationToken* token);
+void luago_free_cancellation_token(struct CancellationToken* token);
 void freeluavm(struct Lua* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
