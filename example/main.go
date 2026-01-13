@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/koeng101/gluau/vm"
+	"github.com/gluau/gluau/vm"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package require
 import (
 	"strings"
 
-	"github.com/koeng101/gluau/vm"
+	"github.com/gluau/gluau/vm"
 )
 
 var (

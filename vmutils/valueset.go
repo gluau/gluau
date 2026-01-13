@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/koeng101/gluau/vm"
+	"github.com/gluau/gluau/vm"
 )
 
 // A ValueSet is a collection of vm.Value objects

@@ -1,7 +1,7 @@
-module github.com/koeng101/gluau/example
+module github.com/gluau/gluau/example
 
 go 1.20
 
-require github.com/koeng101/gluau v0.0.0
+require github.com/gluau/gluau v0.0.0
 
-replace github.com/koeng101/gluau => ../
+replace github.com/gluau/gluau => ../

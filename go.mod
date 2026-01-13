@@ -1,3 +1,3 @@
-module github.com/koeng101/gluau
+module github.com/gluau/gluau
 
 go 1.20
