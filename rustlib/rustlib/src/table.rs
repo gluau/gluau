@@ -373,7 +373,12 @@ pub extern "C" fn luago_table_raw_set(lua: *mut mluau::Lua, tab: GoLuaValueV2, k
             return GoNoneResult::err("Table pointer is null".to_string());
         };
 
-        match tab.raw_set(key.to_value(lua), value.to_value(lua)) {
+        let key = key.to_value(lua);
+        if key == mluau::Value::Nil {
+            return GoNoneResult::err("table key cannot be nil".to_string());
+        }
+
+        match tab.raw_set(key, value.to_value(lua)) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }
@@ -388,7 +393,12 @@ pub extern "C" fn luago_table_set(lua: *mut mluau::Lua, tab: GoLuaValueV2, key: 
             return GoNoneResult::err("Table pointer is null".to_string());
         };
 
-        match tab.set(key.to_value(lua), value.to_value(lua)) {
+        let key = key.to_value(lua);
+        if key == mluau::Value::Nil {
+            return GoNoneResult::err("table key cannot be nil".to_string());
+        }
+
+        match tab.set(key, value.to_value(lua)) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }

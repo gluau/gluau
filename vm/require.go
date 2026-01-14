@@ -278,7 +278,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		}
 		cval.function = fnc
 	}, func() {
-		fmt.Println("loader is being dropped")
+		fmt.Println("loader is being dropped..")
 	})
 
 	res := C.luago_create_require_function(lua, C.struct_GoRequire{

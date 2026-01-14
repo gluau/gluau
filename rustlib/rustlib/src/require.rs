@@ -1,6 +1,6 @@
 use mluau::{NavigateError, Require};
 
-use crate::{IGoCallback, IGoCallbackWrapper, result::{GoValueV2Result, to_c_string_from_ref, wrap_failable}, value_v2::GoLuaValueV2};
+use crate::{IGoCallback, IGoCallbackWrapper, function::get_function, result::{GoValueV2Result, to_c_string_from_ref, wrap_failable}, value_v2::GoLuaValueV2};
 use std::ffi::{c_char, c_void, CString};
 
 #[repr(C)]
@@ -188,20 +188,19 @@ impl Require for GoRequireImpl {
         let data = self.fill(&self.loader, Loader {
             lua: lua_ptr,
             error: std::ptr::null_mut(),
-            function: std::ptr::null_mut(),
+            function: GoLuaValueV2::empty(),
         });
 
         if !data.error.is_null() {
-            assert!(data.function.is_null());
             let error = unsafe { CString::from_raw(data.error) };
             return Err(mluau::Error::external(error.to_string_lossy()))
         }
 
-        assert!(!data.function.is_null());
-        // Safety: Go side must ensure values cannot be used after it is set
-        // here as a return value
-        let func = unsafe { Box::from_raw(data.function) };
-        Ok(*func)
+        let Some(func) = get_function(lua, data.function) else {
+            return Err(mluau::Error::external("loader did not return a function"));
+        };
+
+        Ok(func)
     }
 }
 
@@ -249,7 +248,7 @@ pub struct Loader {
     pub lua: *mut mluau::Lua,
     
     // Go side may set this in response
-    pub function: *mut mluau::Function,
+    pub function: GoLuaValueV2,
     pub error: *mut c_char,
 }
 

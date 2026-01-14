@@ -53,7 +53,7 @@ func (l *LuaBuffer) WriteBytes(offset uint64, data []byte) error {
 			return fmt.Errorf("data length %d exceeds LuaBuffer length %d at offset %d", len(data), size, offset)
 		}
 
-		C.luago_buffer_write_bytes(ptr, C.size_t(offset), (*C.char)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
+		C.luago_buffer_write_bytes(l.lua.ptr(), ptr, C.size_t(offset), (*C.char)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
 		return nil
 	})
 }

@@ -185,7 +185,7 @@ struct GoNoneResult luago_yield_with(struct Lua* lua, struct GoLuaValueV2Array a
 struct GoValueV2Result luago_create_buffer(struct Lua* ptr, const char* s, size_t len);
 struct LuaStringBytes luago_buffer_to_bytes(struct Lua* lua, struct GoLuaValueV2 ptr);
 struct LuaStringBytes luago_buffer_read_bytes(struct Lua* lua, struct GoLuaValueV2 ptr, size_t offset, size_t len);
-void luago_buffer_write_bytes(struct GoLuaValueV2 lua, size_t offset, const char* bytes, size_t len);
+void luago_buffer_write_bytes(struct Lua* lua, struct GoLuaValueV2 ptr, size_t offset, const char* bytes, size_t len);
 void luago_buffer_free_bytes(struct LuaStringBytes bytes);
 size_t luago_buffer_len(struct Lua* lua, struct GoLuaValueV2 ptr);
 

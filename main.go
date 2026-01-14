@@ -597,11 +597,11 @@ func main() {
 	}
 	vmutils.MustOk(
 		myTypeMt.Set(
-			vm.MustCreateString("__tostring"),
+			vm2.MustCreateString("__tostring"),
 			vmutils.Must(
 				vm2.CreateFunction(func(funcVm *vmlib.CallbackLua, args []any) ([]any, error) {
 					fmt.Println("test")
-					return []any{vm.MustCreateString("hello")}, nil
+					return []any{vm2.MustCreateString("hello")}, nil
 				}),
 			),
 		),
@@ -632,19 +632,19 @@ func main() {
 	if val != nil {
 		panic("val is not nil")
 	}
-	vmutils.MustOk(vm3.SetRegistryValue("", vm.MustCreateString("foo")))
+	vmutils.MustOk(vm3.SetRegistryValue("", vm3.MustCreateString("foo")))
 	val = vmutils.Must(vm3.RegistryValue("test"))
 	if val != nil {
 		panic("val is not nil")
 	}
 	val = vmutils.Must(vm3.RegistryValue(""))
-	if val.(*vmlib.LuaString).LooseEquals(vm.MustCreateString("foo")); !ok {
+	if val.(*vmlib.LuaString).LooseEquals(vm3.MustCreateString("foo")); !ok {
 		panic("val is not foo")
 	}
 
-	vmutils.MustOk(vm3.SetRegistryValue("test", vm.MustCreateString("foo")))
+	vmutils.MustOk(vm3.SetRegistryValue("test", vm3.MustCreateString("foo")))
 	val = vmutils.Must(vm3.RegistryValue("test"))
-	if ok := val.(*vmlib.LuaString).LooseEquals(vm.MustCreateString("foo")); !ok {
+	if ok := val.(*vmlib.LuaString).LooseEquals(vm3.MustCreateString("foo")); !ok {
 		panic("val is not foo")
 	}
 
@@ -782,7 +782,7 @@ func main() {
 
 	fmt.Println("Require function created successfully:", requireFunc)
 
-	vm4.Globals().Set(vm.MustCreateString("require"), requireFunc) // This consumes requireFunc so no need to explictly close it
+	vm4.Globals().Set(vm4.MustCreateString("require"), requireFunc) // This consumes requireFunc so no need to explictly close it
 
 	chunkFunc, err := vm4.LoadChunk(vmlib.ChunkOpts{
 		Name: "/",
@@ -798,7 +798,7 @@ func main() {
 	if len(res) != 1 {
 		panic("expected 1 result from require test, got " + fmt.Sprint(len(res)))
 	}
-	if res[0] != 3 {
+	if res[0].(int64) != 3 {
 		panic("expected require test to return 3, got " + vmlib.StringifyValue(res[0]))
 	}
 

@@ -2,7 +2,6 @@ package vm
 
 import (
 	"errors"
-	"fmt"
 	"runtime"
 	"sync"
 )
@@ -90,7 +89,7 @@ func (o *object) Close() error {
 		o.tab.dtor(o.ptr) // Call the destructor if it exists
 	}
 
-	fmt.Println("Object closed, pointer freed")
+	//fmt.Println("Object closed, pointer freed")
 	o.ptr = nil                  // Prevent double free
 	o.closed = true              // Mark as closed
 	runtime.SetFinalizer(o, nil) // Remove finalizer to prevent double calls

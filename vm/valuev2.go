@@ -197,6 +197,9 @@ func baseRefToC(bv *BaseRef) (C.struct_GoLuaValueV2, error, *BaseRef) {
 	if bv == nil || bv.closed.Load() {
 		return C.struct_GoLuaValueV2{}, errors.New("cannot convert nil LuaTable to GoLuaValueV2"), nil
 	}
+	if bv.lua.object.IsClosed() {
+		return C.struct_GoLuaValueV2{}, errors.New("cannot convert LuaTable from closed Lua VM to GoLuaValueV2"), nil
+	}
 	return bv.value, nil, bv
 }
 
