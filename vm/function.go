@@ -20,7 +20,7 @@ type LuaFunction struct {
 // or the error
 func (l *LuaFunction) Call(args ...any) ([]any, error) {
 	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ([]any, error) {
-		mw, err := createMultiValue(args)
+		mw, err := createMultiValue(l.lua, args)
 		defer freeMultiValueArray(mw)
 		if err != nil {
 			return nil, err // Return error if the value cannot be converted
@@ -31,7 +31,6 @@ func (l *LuaFunction) Call(args ...any) ([]any, error) {
 		if res.error != nil {
 			return nil, moveErrorToGo(res.error)
 		}
-		fmt.Println("Function call successful, copying return values")
 		return copyAndFreeMultiValueArray(l.lua, res.value), nil
 	})
 }

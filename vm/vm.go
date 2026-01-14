@@ -165,7 +165,7 @@ func (l *Lua) SetRegistryValue(key string, value any) error {
 		return err
 	}
 
-	valueVal, err, _ := valueToC(value)
+	valueVal, err, _ := valueToC(l, value)
 
 	if err != nil {
 		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
@@ -405,7 +405,7 @@ func (l *Lua) CreateString(s string) (*LuaString, error) {
 
 // CreateString creates a Lua string from a Go string.
 func (l *Lua) MustCreateString(s string) *LuaString {
-	st, err := l.createString([]byte(s))
+	st, err := l.CreateString(s)
 
 	if err != nil {
 		panic(fmt.Sprintf("failed to create Lua string: %v", err))
@@ -534,7 +534,7 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 		mw := copyAndFreeMultiValueArray(l, cval.args)
 
 		callbackVm := &Lua{object: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
-		//defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
+		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
 		cbLua := &CallbackLua{
 			mainstate: l,          // The main Lua VM that owns this callback
@@ -549,7 +549,7 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 			return
 		}
 
-		outmw, err := createMultiValue(values)
+		outmw, err := createMultiValue(l, values)
 		if err != nil {
 			errv := moveStringToRust(err.Error())
 			cval.error = errv // Rust side will deallocate it for us
@@ -657,7 +657,7 @@ func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 		if opts.Env.lua != l {
 			return nil, fmt.Errorf("cannot set environment table from different Lua instance")
 		}
-		env, err, _ = valueToC(opts.Env)
+		env, err, _ = valueToC(l, opts.Env)
 		if err != nil {
 			return nil, err // Return error if the environment table is closed
 		}
@@ -848,7 +848,7 @@ func (c *CallbackLua) YieldWith(args []any) error {
 		return err // Return error if the callback Lua VM is closed
 	}
 
-	outmw, err := createMultiValue(args)
+	outmw, err := createMultiValue(c.mainstate, args)
 	if err != nil {
 		return err // Return error if the values cannot be converted (diff lua state, closed object, etc)
 	}

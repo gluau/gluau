@@ -53,17 +53,17 @@ func main() {
 	defer tab.Close() // Ensure we close the Lua table when done
 
 	// Insert some values into the table
-	err = tab.Set(vm.MustCreateString("key1"), vm.MustCreateString("value1"))
+	err = tab.Set("key1", "value1")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	err = tab.Set(vm.MustCreateString("key2"), 42)
+	err = tab.Set("key2", 42)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	err = tab.Set(vm.MustCreateString("key3"), [3]float32{1, 2, 3})
+	err = tab.Set("key3", [3]float32{1, 2, 3})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
@@ -144,7 +144,7 @@ func main() {
 	default:
 		panic(fmt.Sprintf("Expected LuaValueNil, got %s", poppedValue))
 	}
-	err = tab.Push(vm.MustCreateString("test"))
+	err = tab.Push("test")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to push value to Lua table: %v", err))
 	}
@@ -261,22 +261,20 @@ func main() {
 	fmt.Println("empty table equals itself", equals)
 
 	myFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
-		return []any{
-			vm.MustCreateString("Hello world"),
-		}, nil
+		return []any{"Hello world"}, nil
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	res, err := myFunc.Call(vm.MustCreateString("foo"))
+	res, err := myFunc.Call("foo")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("Function call response", res[0].(*vmlib.LuaString).String())
 	defer res[0].(*vmlib.LuaString).Close()
 
-	res, err = myFunc.Call(vm.MustCreateString("foo"))
+	res, err = myFunc.Call("foo")
 	if err != nil {
 		panic(err)
 	}
@@ -291,7 +289,7 @@ func main() {
 		panic(err)
 	}
 
-	_, err = myFunc.Call(vm.MustCreateString("foo"))
+	_, err = myFunc.Call("foo")
 	if err != nil {
 		fmt.Println("function error", err)
 	}
@@ -308,12 +306,12 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua table: %v", err))
 	}
 	defer tab.Close() // Ensure we close the Lua table when done
-	err = tab.Set(vm.MustCreateString("test"), myFunc)
+	err = tab.Set("test", myFunc)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	testFn, err := tab.Get(vm.MustCreateString("test"))
+	testFn, err := tab.Get("test")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get value from Lua table: %v", err))
 	}
@@ -329,15 +327,15 @@ func main() {
 	if err != nil {
 		panic("failed to make global table")
 	}
-	err = globTab.Set(vm.MustCreateString("a"), 5)
+	err = globTab.Set("a", 5)
 	if err != nil {
 		panic("failed to set a")
 	}
-	err = globTab.Set(vm.MustCreateString("_G"), globTab)
+	err = globTab.Set("_G", globTab)
 	if err != nil {
 		panic("failed to set _G")
 	}
-	err = globTab.Set(vm.MustCreateString("_G"), globTab)
+	err = globTab.Set("_G", globTab)
 	if err != nil {
 		panic("failed to set _G")
 	}
@@ -403,7 +401,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua table for userdata metatable: %v", err))
 	}
 	// Set the __type
-	err = udMt.Set(vm.MustCreateString("__type"), vm.MustCreateString("MyUserDataType"))
+	err = udMt.Set("__type", "MyUserDataType")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set __type in Lua userdata metatable: %v", err))
 	}
@@ -552,7 +550,7 @@ func main() {
 	defer thread2.Close() // Ensure we close the Lua thread when done
 	fmt.Println("Lua thread 3 created successfully:", thread2)
 	yieldFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
-		lua.YieldWith([]any{vm.MustCreateString("yielded value")})
+		lua.YieldWith([]any{"yielded value"})
 		return []any{}, nil
 	})
 
@@ -597,11 +595,11 @@ func main() {
 	}
 	vmutils.MustOk(
 		myTypeMt.Set(
-			vm2.MustCreateString("__tostring"),
+			"__tostring",
 			vmutils.Must(
 				vm2.CreateFunction(func(funcVm *vmlib.CallbackLua, args []any) ([]any, error) {
 					fmt.Println("test")
-					return []any{vm2.MustCreateString("hello")}, nil
+					return []any{"hello"}, nil
 				}),
 			),
 		),
@@ -632,13 +630,13 @@ func main() {
 	if val != nil {
 		panic("val is not nil")
 	}
-	vmutils.MustOk(vm3.SetRegistryValue("", vm3.MustCreateString("foo")))
+	vmutils.MustOk(vm3.SetRegistryValue("", "foo"))
 	val = vmutils.Must(vm3.RegistryValue("test"))
 	if val != nil {
 		panic("val is not nil")
 	}
 	val = vmutils.Must(vm3.RegistryValue(""))
-	if val.(*vmlib.LuaString).LooseEquals(vm3.MustCreateString("foo")); !ok {
+	if val.(*vmlib.LuaString).LooseEquals("foo"); !ok {
 		panic("val is not foo")
 	}
 
@@ -782,7 +780,7 @@ func main() {
 
 	fmt.Println("Require function created successfully:", requireFunc)
 
-	vm4.Globals().Set(vm4.MustCreateString("require"), requireFunc) // This consumes requireFunc so no need to explictly close it
+	vm4.Globals().Set("require", requireFunc) // This consumes requireFunc so no need to explictly close it
 
 	chunkFunc, err := vm4.LoadChunk(vmlib.ChunkOpts{
 		Name: "/",

@@ -105,7 +105,7 @@ func (l *LuaThread) Sandbox() error {
 // If the thread is yielded via coroutine.yield or CallbackLua.YieldWith, returns the values passed to yield. If the thread returns values from its main function, returns those.
 func (l *LuaThread) Resume(args ...any) ([]any, error) {
 	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ([]any, error) {
-		mw, err := createMultiValue(args)
+		mw, err := createMultiValue(l.lua, args)
 		if err != nil {
 			return nil, err // Return error if the value cannot be converted
 		}
@@ -127,7 +127,7 @@ func (l *LuaThread) Resume(args ...any) ([]any, error) {
 // This is a Luau specific extension
 func (l *LuaThread) ResumeError(errorValue any) ([]any, error) {
 	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ([]any, error) {
-		errorValueC, err, ref := valueToC(errorValue)
+		errorValueC, err, ref := valueToC(l.lua, errorValue)
 		if ref != nil {
 			// Ensure error value is not closed
 			if ref.closed.Load() {

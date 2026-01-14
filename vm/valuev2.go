@@ -63,7 +63,7 @@ func castValue(lua *Lua, value C.struct_GoLuaValueV2) any {
 //
 // The underlying value should still be kept alive using runtime.KeepAlive() etc until the C call
 // is finished.
-func valueToC(val any) (C.struct_GoLuaValueV2, error, *BaseRef) {
+func valueToC(lua *Lua, val any) (C.struct_GoLuaValueV2, error, *BaseRef) {
 	var cVal C.struct_GoLuaValueV2
 	switch v := val.(type) {
 	case nil:
@@ -86,20 +86,27 @@ func valueToC(val any) (C.struct_GoLuaValueV2, error, *BaseRef) {
 	case [3]float32:
 		cVal.tag = C.LuaValueTypeV2Vector
 		*(*[3]C.float)(unsafe.Pointer(&cVal.data)) = [3]C.float{C.float(v[0]), C.float(v[1]), C.float(v[2])}
+	case string:
+		// Create a LuaString for the string
+		ls, err := lua.CreateString(v)
+		if err != nil {
+			return C.struct_GoLuaValueV2{}, fmt.Errorf("cannot convert string to LuaString: %w", err), nil
+		}
+		return baseRefToC(lua, ls.BaseRef)
 	case *LuaString:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	case *LuaFunction:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	case *LuaTable:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	case *LuaThread:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	case *LuaUserData:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	case *LuaBuffer:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	case *OtherValue:
-		return baseRefToC(v.BaseRef)
+		return baseRefToC(lua, v.BaseRef)
 	default:
 		return C.struct_GoLuaValueV2{}, fmt.Errorf("cannot convert Go value of type %T to GoLuaValueV2", val), nil
 	}
@@ -144,23 +151,23 @@ func StringifyValue(value any) string {
 }
 
 // Creates a GoLuaValueV2Array from a slice of Go values
-func createMultiValue(values []any) (C.struct_GoLuaValueV2Array, error) {
+func createMultiValue(lua *Lua, values []any) (C.struct_GoLuaValueV2Array, error) {
 	size := len(values)
 	cArray := C.luago_valuev2array_alloc(C.size_t(size))
 
 	// Fill the array
 	cSlice := unsafe.Slice(cArray.values, size)
 	for i, val := range values {
-		cVal, err, m := valueToC(val)
+		cVal, err, m := valueToC(lua, val)
 		if m != nil {
 			if m.closed.Load() {
-				fmt.Println("Error: cannot use closed argument in function call")
+				//fmt.Println("Error: cannot use closed argument in function call")
 				C.luago_valuev2array_destroy(cArray)
 				return C.struct_GoLuaValueV2Array{}, errors.New("cannot use closed argument in function call")
 			}
 		}
 		if err != nil {
-			fmt.Println("Error converting value to C GoLuaValueV2:", err)
+			//fmt.Println("Error converting value to C GoLuaValueV2:", err)
 			C.luago_valuev2array_destroy(cArray)
 			return C.struct_GoLuaValueV2Array{}, err
 		}
@@ -172,7 +179,6 @@ func createMultiValue(values []any) (C.struct_GoLuaValueV2Array, error) {
 
 func freeMultiValueArray(arr C.struct_GoLuaValueV2Array) {
 	// Free the array itself
-	fmt.Println("Freeing multi value array")
 	C.luago_valuev2array_destroy(arr)
 }
 
@@ -186,16 +192,19 @@ func copyAndFreeMultiValueArray(lua *Lua, arr C.struct_GoLuaValueV2Array) []any 
 	for i := 0; i < int(arr.size); i++ {
 		values[i] = castValue(lua, cSlice[i])
 	}
-	fmt.Println("Copying and freeing multi value array")
-	//panic("Debug: Freeing multi value array")
 	C.luago_valuev2array_destroy(arr)
 	return values
 }
 
 // Casts a BaseRef to a GoLuaValueV2
-func baseRefToC(bv *BaseRef) (C.struct_GoLuaValueV2, error, *BaseRef) {
+func baseRefToC(lua *Lua, bv *BaseRef) (C.struct_GoLuaValueV2, error, *BaseRef) {
 	if bv == nil || bv.closed.Load() {
 		return C.struct_GoLuaValueV2{}, errors.New("cannot convert nil LuaTable to GoLuaValueV2"), nil
+	}
+	defer bv.lua.object.RUnlock()
+	bv.lua.object.RLock()
+	if lua != bv.lua {
+		return C.struct_GoLuaValueV2{}, errors.New("cannot convert LuaTable from different Lua VM to GoLuaValueV2"), nil
 	}
 	if bv.lua.object.IsClosed() {
 		return C.struct_GoLuaValueV2{}, errors.New("cannot convert LuaTable from closed Lua VM to GoLuaValueV2"), nil

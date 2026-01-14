@@ -33,19 +33,19 @@ func (n *NavigationResult) fillC(c *C.struct_GoNavigationResult) {
 
 // Returns a new ambiguous navigation result
 func AmbiguousNavigationResult() *NavigationResult {
-	fmt.Println("Creating ambiguous navigation result")
+	//fmt.Println("Creating ambiguous navigation result")
 	return &NavigationResult{ambiguous: true}
 }
 
 // Returns a new not found navigation result
 func NotFoundNavigationResult() *NavigationResult {
-	fmt.Println("Creating not found navigation result")
+	//fmt.Println("Creating not found navigation result")
 	return &NavigationResult{notfound: true}
 }
 
 // Returns a new other navigation result with the given error
 func OtherNavigationResult(err error) *NavigationResult {
-	fmt.Println("Creating other navigation result with error:", err)
+	//fmt.Println("Creating other navigation result with error:", err)
 	return &NavigationResult{other: err}
 }
 
@@ -264,7 +264,7 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 			return
 		}
 
-		fnc, err, ref := valueToC(fn)
+		fnc, err, ref := valueToC(l, fn)
 		if ref != nil {
 			// Ensure function is not closed
 			if ref.closed.Load() {

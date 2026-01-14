@@ -32,7 +32,7 @@ func (l *LuaTable) Clear() error {
 // ContainsKey checks if the LuaTable contains a key
 func (l *LuaTable) ContainsKey(key any) (bool, error) {
 	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (bool, error) {
-		keyVal, err, _ := valueToC(key)
+		keyVal, err, _ := valueToC(l.lua, key)
 		if err != nil {
 			return false, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
 		}
@@ -144,7 +144,7 @@ func (l *LuaTable) ForEachValue(fn TableForEachValueFn) error {
 // If the key does not exist, it returns LuaValue of nil
 func (l *LuaTable) Get(key any) (any, error) {
 	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (any, error) {
-		keyVal, err, _ := valueToC(key)
+		keyVal, err, _ := valueToC(l.lua, key)
 		if err != nil {
 			return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
 		}
@@ -238,7 +238,7 @@ func (l *LuaTable) Pop() (any, error) {
 // This might invoke the __len and __newindex metamethods.
 func (l *LuaTable) Push(value any) error {
 	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
-		valueVal, err, _ := valueToC(value)
+		valueVal, err, _ := valueToC(l.lua, value)
 		if err != nil {
 			return err
 		}
@@ -254,7 +254,7 @@ func (l *LuaTable) Push(value any) error {
 // Gets the value associated to key without invoking metamethods.
 func (l *LuaTable) RawGet(key any) (any, error) {
 	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (any, error) {
-		keyVal, err, _ := valueToC(key)
+		keyVal, err, _ := valueToC(l.lua, key)
 		if err != nil {
 			return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
 		}
@@ -275,7 +275,7 @@ func (l *LuaTable) RawGet(key any) (any, error) {
 // The worst case complexity is O(n), where n is the table length.
 func (l *LuaTable) RawInsert(idx int64, value any) error {
 	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
-		valueVal, err, _ := valueToC(value)
+		valueVal, err, _ := valueToC(l.lua, value)
 		if err != nil {
 			return err
 		}
@@ -312,7 +312,7 @@ func (l *LuaTable) RawPop() (any, error) {
 // RawPush appends a value to the back of the LuaTable without invoking metamethods.
 func (l *LuaTable) RawPush(value any) error {
 	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
-		valueVal, err, _ := valueToC(value)
+		valueVal, err, _ := valueToC(l.lua, value)
 		if err != nil {
 			return err
 		}
@@ -333,7 +333,7 @@ func (l *LuaTable) RawPush(value any) error {
 // For non-integer keys, this is equivalent to a table[key] = nil operation,
 func (l *LuaTable) RawRemove(key any) error {
 	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
-		keyVal, err, _ := valueToC(key)
+		keyVal, err, _ := valueToC(l.lua, key)
 		if err != nil {
 			return err
 		}
@@ -351,11 +351,11 @@ func (l *LuaTable) RawRemove(key any) error {
 // If value is nil, this effectively removes the key from the table.
 func (l *LuaTable) RawSet(key any, value any) error {
 	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
-		keyVal, err, _ := valueToC(key)
+		keyVal, err, _ := valueToC(l.lua, key)
 		if err != nil {
 			return err
 		}
-		valueVal, err, _ := valueToC(value)
+		valueVal, err, _ := valueToC(l.lua, value)
 		if err != nil {
 			return err
 		}
@@ -376,11 +376,11 @@ func (l *LuaTable) RawSet(key any, value any) error {
 // This might invoke the __newindex metamethod if it exists.
 func (l *LuaTable) Set(key any, value any) error {
 	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
-		keyVal, err, _ := valueToC(key)
+		keyVal, err, _ := valueToC(l.lua, key)
 		if err != nil {
 			return err
 		}
-		valueVal, err, _ := valueToC(value)
+		valueVal, err, _ := valueToC(l.lua, value)
 		if err != nil {
 			return err
 		}
