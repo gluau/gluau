@@ -263,18 +263,20 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 			cval.error = moveStringToRust("loader returned nil function")
 			return
 		}
-		err = fn.object.Disarm()
-		if err != nil {
-			cval.error = moveStringToRust(err.Error())
-			return
-		}
-		ptr, err := fn.object.UnsafePointer()
-		if err != nil {
-			cval.error = moveStringToRust(err.Error())
-			return
-		}
 
-		cval.function = (*C.struct_LuaFunction)(unsafe.Pointer(ptr))
+		fnc, err, ref := valueToC(fn)
+		if ref != nil {
+			// Ensure function is not closed
+			if ref.closed.Load() {
+				cval.error = moveStringToRust("cannot return closed function from loader")
+				return
+			}
+		}
+		if err != nil {
+			cval.error = moveStringToRust(err.Error())
+			return
+		}
+		cval.function = fnc
 	}, func() {
 		fmt.Println("loader is being dropped")
 	})
@@ -297,5 +299,9 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 		return nil, err
 	}
 
-	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
+	fn, ok := castValue(l, res.value).(*LuaFunction)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaFunction from require function creation, got %T", fn)
+	}
+	return fn, nil
 }

@@ -6,37 +6,19 @@ package vm
 import "C"
 import (
 	"fmt"
-	"unsafe"
+	"runtime"
 )
-
-var threadTab = objectTab{
-	dtor: func(ptr *C.void) {
-		C.luago_free_thread((*C.struct_LuaThread)(unsafe.Pointer(ptr)))
-	},
-}
 
 // A LuaThread is an abstraction over a Lua thread object.
 type LuaThread struct {
-	lua    *Lua // The Lua VM wrapper that owns this thread
-	object *object
-}
-
-func (l *LuaThread) innerPtr() (*C.struct_LuaThread, error) {
-	if l.lua.object.IsClosed() {
-		return nil, fmt.Errorf("cannot access thread on closed Lua VM")
-	}
-
-	ptr, err := l.object.PointerNoLock()
-	if err != nil {
-		return nil, err // Return error if the object is closed
-	}
-	return (*C.struct_LuaThread)(unsafe.Pointer(ptr)), nil
+	*BaseRef
 }
 
 type ThreadStatus int
 
 const (
-	ThreadStatusResumable ThreadStatus = iota
+	ThreadStatusUnknown ThreadStatus = iota
+	ThreadStatusResumable
 	ThreadStatusRunning
 	ThreadStatusFinished
 	ThreadStatusError
@@ -57,35 +39,25 @@ func (ts ThreadStatus) String() string {
 	}
 }
 
-// Returns the current status of the LuaThread or ThreadStatusFinished if the thread has been closed
+// Returns the current status of the LuaThread or ThreadStatusUnknown if the thread has been closed
 //
 // Locking behavior: This function acquires a read lock on the LuaThread object.
 func (l *LuaThread) Status() ThreadStatus {
-	if l.lua.object.IsClosed() {
-		return ThreadStatusFinished // Return finished if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return ThreadStatusFinished // Return finished if the object is closed
-	}
-
-	status := C.luago_thread_status(ptr)
-	switch uint8(status) {
-	case 0:
-		return ThreadStatusResumable // Resumable
-	case 1:
-		return ThreadStatusRunning // Running
-	case 2:
-		return ThreadStatusFinished // Finished
-	case 3:
-		return ThreadStatusError // Error
-	default:
-		return ThreadStatusFinished // Default to finished for unknown statuses
-	}
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ThreadStatus {
+		status := C.luago_thread_status(l.lua.ptr(), ptr)
+		switch uint8(status) {
+		case 0:
+			return ThreadStatusResumable // Resumable
+		case 1:
+			return ThreadStatusRunning // Running
+		case 2:
+			return ThreadStatusFinished // Finished
+		case 3:
+			return ThreadStatusError // Error
+		default:
+			return ThreadStatusFinished // Default to finished for unknown statuses
+		}
+	})
 }
 
 // Resets the LuaThread to the initial state of a newly created Luau thread regardless
@@ -94,34 +66,16 @@ func (l *LuaThread) Status() ThreadStatus {
 // Locking behavior: Takes a read-lock on the LuaFunction object
 // and the LuaThread object
 func (l *LuaThread) Reset(fn *LuaFunction) error {
-	if fn == nil || l == nil {
-		return fmt.Errorf("neither thread nor function can be nil")
-	}
-
-	if fn.lua != l.lua {
-		return fmt.Errorf("cannot reset thread with function from different Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-	lPtr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the thread is closed
-	}
-
-	fn.object.RLock()
-	defer fn.object.RUnlock()
-	fnPtr, err := fn.innerPtr()
-	if err != nil {
-		return err // Return error if the function is closed
-	}
-
-	res := C.luago_reset_thread(lPtr, fnPtr)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		return withBaseRefNoRet(fn.BaseRef, func(fn C.struct_GoLuaValueV2) error {
+			res := C.luago_reset_thread(l.lua.ptr(), ptr, fn)
+			if res.error != nil {
+				err := moveErrorToGo(res.error)
+				return err
+			}
+			return nil
+		})
+	})
 }
 
 // Sandboxes a Luau thread
@@ -134,23 +88,13 @@ func (l *LuaThread) Reset(fn *LuaFunction) error {
 //
 // Locking behavior: This function acquires a read lock on the LuaThread object.
 func (l *LuaThread) Sandbox() error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot sandbox thread on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-
-	res := C.luago_thread_sandbox(ptr)
-	if res.error != nil {
-		return moveErrorToGo(res.error) // Return error if sandboxing failed
-	}
-	return nil // Return nil if sandboxing was successful
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		res := C.luago_thread_sandbox(l.lua.ptr(), ptr)
+		if res.error != nil {
+			return moveErrorToGo(res.error) // Return error if sandboxing failed
+		}
+		return nil // Return nil if sandboxing was successful
+	})
 }
 
 // Resume resumes a thread `th`
@@ -159,31 +103,21 @@ func (l *LuaThread) Sandbox() error {
 //
 // If the thread is no longer resumable (meaning it has finished execution or encountered an error), this will return a coroutine unresumable error, otherwise will return as follows:
 // If the thread is yielded via coroutine.yield or CallbackLua.YieldWith, returns the values passed to yield. If the thread returns values from its main function, returns those.
-func (l *LuaThread) Resume(args ...Value) ([]Value, error) {
-	if l.lua.object.IsClosed() {
-		return nil, fmt.Errorf("cannot resume thread on closed Lua VM")
-	}
+func (l *LuaThread) Resume(args ...any) ([]any, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ([]any, error) {
+		mw, err := createMultiValue(args)
+		if err != nil {
+			return nil, err // Return error if the value cannot be converted
+		}
+		defer freeMultiValueArray(mw)
 
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return nil, err // Return error if the object is closed
-	}
-	mw, err := l.lua.multiValueFromValues(args)
-	if err != nil {
-		return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-
-	res := C.luago_thread_resume(ptr, mw.ptr)
-	if res.error != nil {
-		return nil, moveErrorToGo(res.error)
-	}
-	rets := &luaMultiValue{ptr: res.value, lua: l.lua}
-	retsMw := rets.take()
-	rets.close()
-	return retsMw, nil
+		res := C.luago_thread_resume(l.lua.ptr(), ptr, mw)
+		runtime.KeepAlive(args) // ensure args are not GC'd before the call
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return copyAndFreeMultiValueArray(l.lua, res.value), nil
+	})
 }
 
 // ResumeError resumes a thread `th` with an error
@@ -191,95 +125,30 @@ func (l *LuaThread) Resume(args ...Value) ([]Value, error) {
 // Similar to Resume, but allows the resume to throw an error into the thread.
 //
 // This is a Luau specific extension
-func (l *LuaThread) ResumeError(errorValue Value) ([]Value, error) {
-	if l.lua.object.IsClosed() {
-		return nil, fmt.Errorf("cannot resume thread on closed Lua VM")
-	}
+func (l *LuaThread) ResumeError(errorValue any) ([]any, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ([]any, error) {
+		errorValueC, err, ref := valueToC(errorValue)
+		if ref != nil {
+			// Ensure error value is not closed
+			if ref.closed.Load() {
+				return nil, fmt.Errorf("cannot resume thread with closed value")
+			}
+		}
+		if err != nil {
+			return nil, err // Return error if the value cannot be converted
+		}
 
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return nil, err // Return error if the object is closed
-	}
-	errorValueC, err := l.lua.valueToC(errorValue)
-	if err != nil {
-		return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-
-	res := C.luago_thread_resume_error(ptr, errorValueC)
-	if res.error != nil {
-		return nil, moveErrorToGo(res.error)
-	}
-	rets := &luaMultiValue{ptr: res.value, lua: l.lua}
-	retsMw := rets.take()
-	rets.close()
-	return retsMw, nil
-}
-
-// Returns a 'pointer' to a Lua-owned thread
-//
-// This pointer is only useful for hashing/debugging
-// and cannot be converted back to the original Lua thread object.
-func (l *LuaThread) Pointer() uint64 {
-	if l.lua.object.IsClosed() {
-		return 0 // Return 0 if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-	lptr, err := l.innerPtr()
-	if err != nil {
-		return 0 // Return 0 if the object is closed
-	}
-
-	ptr := C.luago_thread_to_pointer(lptr)
-	return uint64(ptr)
-}
-
-// Equals checks if the LuaThread equals another LuaThread by lua value reference
-func (l *LuaThread) Equals(other *LuaThread) bool {
-	if l.lua.object.IsClosed() {
-		return false // Return false if the Lua VM is closed
-	}
-
-	if other == nil || l.lua != other.lua {
-		return false // Return false if the Lua instances are different
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-	other.object.RLock()
-	defer other.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return false // Return error if the object is closed
-	}
-	ptr2, err := other.innerPtr()
-	if err != nil {
-		return false // Return error if the other object is closed
-	}
-
-	return bool(C.luago_thread_equals(ptr, ptr2))
+		res := C.luago_thread_resume_error(l.lua.ptr(), ptr, errorValueC)
+		runtime.KeepAlive(errorValue) // ensure args are not GC'd before the call
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return copyAndFreeMultiValueArray(l.lua, res.value), nil
+	})
 }
 
 // String returns a string representation of the LuaThread.
 func (l *LuaThread) String() string {
 	status := l.Status()
 	return "LuaThread(status: " + status.String() + ", pointer: " + fmt.Sprintf("%#x", l.Pointer()) + ")"
-}
-
-// ToValue converts the LuaThread to a Value.
-func (l *LuaThread) ToValue() Value {
-	return &ValueThread{value: l}
-}
-
-func (l *LuaThread) Close() error {
-	if l == nil || l.object == nil {
-		return nil // Nothing to close
-	}
-	// Close the LuaThread object
-	return l.object.Close()
 }

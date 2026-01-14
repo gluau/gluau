@@ -1,6 +1,6 @@
 use mluau::{NavigateError, Require};
 
-use crate::{result::{to_c_string_from_ref, wrap_failable, GoFunctionResult}, IGoCallback, IGoCallbackWrapper};
+use crate::{IGoCallback, IGoCallbackWrapper, result::{GoValueV2Result, to_c_string_from_ref, wrap_failable}, value_v2::GoLuaValueV2};
 use std::ffi::{c_char, c_void, CString};
 
 #[repr(C)]
@@ -254,19 +254,19 @@ pub struct Loader {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_require_function(ptr: *mut mluau::Lua, gr: GoRequire) -> GoFunctionResult  {
+pub extern "C" fn luago_create_require_function(ptr: *mut mluau::Lua, gr: GoRequire) -> GoValueV2Result  {
     wrap_failable(|| {
         // Safety: Assume ptr is a valid, non-null pointer to a Lua
         if ptr.is_null() {
-            return GoFunctionResult::err("Lua pointer is null".to_string());
+            return GoValueV2Result::err("Lua pointer is null".to_string());
         }
 
         let lua = unsafe { &*ptr };
         let func = lua.create_require_function(gr.to_impl());
 
         match func {
-            Ok(f) => GoFunctionResult::ok(Box::into_raw(Box::new(f))),
-            Err(err) => GoFunctionResult::err(format!("{err}")),
+            Ok(f) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::Function(f))),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }

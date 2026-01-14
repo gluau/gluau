@@ -42,7 +42,7 @@ func main() {
 	fmt.Println("Lua string as bytes with nul:", luaString.BytesWithNUL())
 	fmt.Printf("Lua string pointer: 0x%x\n", luaString.Pointer())
 	luaString.Close() // Clean up the Lua string when done
-	fmt.Println("Lua string as bytes after free (should be empty/nil):", luaString.Bytes())
+	fmt.Println("Lua string as bytes after free (should be empty/nil): ", luaString.Bytes())
 
 	// Example of creating a Lua table
 	tab, err := vm.CreateTable()
@@ -50,40 +50,42 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua table: %v", err))
 	}
 
+	defer tab.Close() // Ensure we close the Lua table when done
+
 	// Insert some values into the table
-	err = tab.Set(vmlib.GoString("key1"), vmlib.GoString("value1"))
+	err = tab.Set(vm.MustCreateString("key1"), vm.MustCreateString("value1"))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	err = tab.Set(vmlib.GoString("key2"), vmlib.NewValueInteger(42))
+	err = tab.Set(vm.MustCreateString("key2"), 42)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	err = tab.Set(vmlib.GoString("key3"), vmlib.NewValueVector(1, 2, 3))
+	err = tab.Set(vm.MustCreateString("key3"), [3]float32{1, 2, 3})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	var testKey vmlib.Value
-	tab.ForEach(func(key, value vmlib.Value) error {
-		if key.Type() == vmlib.LuaValueString {
-			fmt.Println("Key is a LuaString:", key.(*vmlib.ValueString).Value().String())
+	var testKey any
+	err = tab.ForEach(func(key, value any) error {
+		if key, ok := key.(*vmlib.LuaString); ok {
+			fmt.Println("Key is a LuaString:", key.String())
 			testKey = key
 		}
-		if value.Type() == vmlib.LuaValueString {
-			fmt.Println("Value is a LuaString:", value.(*vmlib.ValueString).Value().String())
-		} else if value.Type() == vmlib.LuaValueInteger {
-			fmt.Println("Value is a LuaInteger:", value.(*vmlib.ValueInteger).Value())
-		} else if value.Type() == vmlib.LuaValueVector {
-			vec := value.(*vmlib.ValueVector).Value()
-			fmt.Println("Value is a LuaVector:", vec[0], vec[1], vec[2])
-		} else {
-			return fmt.Errorf("unexpected value type: %s", value.Type().String())
+		switch value := value.(type) {
+		case *vmlib.LuaString:
+			fmt.Println("Value is a LuaString:", value.String())
+		case int64:
+			fmt.Println("Value is a LuaInteger:", value)
+		case [3]float32:
+			fmt.Println("Value is a LuaVector:", value[0], value[1], value[2])
+		default:
+			return fmt.Errorf("unexpected value type: %T", value)
 		}
 		fmt.Println("Key:", key, "Value:", value)
-		//time.Sleep(time.Second * 20) // Simulate some processing time
+		//time.Sleep(time.Second * 2) // Simulate some processing time
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -95,12 +97,17 @@ func main() {
 			fmt.Println("Finished processing key-value pair in goroutine:", key, value)
 			panic("whee")
 		}()
+		//panic("hello")
 		return nil
 	})
 
-	fmt.Println("Key is a LuaString:", testKey.(*vmlib.ValueString).Value().String())
+	if err != nil {
+		panic(fmt.Sprintf("ForEach error: %v", err))
+	}
 
-	err = tab.ForEach(func(key, value vmlib.Value) error {
+	fmt.Println("Key is a LuaString:", testKey.(*vmlib.LuaString).String())
+
+	err = tab.ForEach(func(key, value any) error {
 		panic("test panic")
 	})
 	if err == nil {
@@ -114,6 +121,7 @@ func main() {
 	if isEmpty {
 		panic("Non-empty Lua table is empty")
 	}
+
 	tablen, err := tab.Len()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get Lua table length: %v", err))
@@ -125,14 +133,18 @@ func main() {
 	if mt != nil {
 		panic("Lua table should not have a metatable")
 	}
+
 	poppedValue, err := tab.Pop()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to pop value from Lua table: %v", err))
 	}
-	if poppedValue.Type() != vmlib.LuaValueNil {
-		panic(fmt.Sprintf("Expected LuaValueNil, got %d", poppedValue.Type()))
+	switch poppedValue.(type) {
+	case nil:
+		// Expected
+	default:
+		panic(fmt.Sprintf("Expected LuaValueNil, got %s", poppedValue))
 	}
-	err = tab.Push(vmlib.GoString("test"))
+	err = tab.Push(vm.MustCreateString("test"))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to push value to Lua table: %v", err))
 	}
@@ -213,10 +225,9 @@ func main() {
 	if err != nil {
 		fmt.Println("Error creating Lua table:", err)
 	} else {
-		fmt.Println("Lua table created successfully:", luaTable)
+		fmt.Println("Lua table created successfully: ", luaTable)
 		panic("this should never happen (table overflow expected)")
 	}
-	defer luaTable.Close() // Ensure we close the Lua table when done
 
 	luaTable2, err := vm.CreateTableWithCapacity(10000, 10)
 	if err != nil {
@@ -232,7 +243,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua string: %v", err))
 	}
 	defer fooStr.Close() // Ensure we close the Lua string when done
-	containsKey, err := luaTable2.ContainsKey(fooStr.ToValue())
+	containsKey, err := luaTable2.ContainsKey(fooStr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to check if Lua table contains key: %v", err))
 	}
@@ -249,41 +260,42 @@ func main() {
 	}
 	fmt.Println("empty table equals itself", equals)
 
-	myFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
-		return []vmlib.Value{
-			vmlib.GoString("Hello world"),
+	myFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
+		return []any{
+			vm.MustCreateString("Hello world"),
 		}, nil
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	res, err := myFunc.Call(vmlib.GoString("foo"))
+	res, err := myFunc.Call(vm.MustCreateString("foo"))
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
-	defer res[0].Close()
+	fmt.Println("Function call response", res[0].(*vmlib.LuaString).String())
+	defer res[0].(*vmlib.LuaString).Close()
 
-	res, err = myFunc.Call(vmlib.GoString("foo"))
+	res, err = myFunc.Call(vm.MustCreateString("foo"))
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
-	defer res[0].Close()
+	fmt.Println("Function call response", res[0].(*vmlib.LuaString).String())
+	defer res[0].(*vmlib.LuaString).Close()
 
-	myFunc, err = vm.CreateFunction(func(lua *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
-		return nil, errors.New(args[0].(*vmlib.ValueString).Value().String())
+	myFunc, err = vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
+		fmt.Println("Function called with arg:", args[0])
+		return nil, errors.New(args[0].(*vmlib.LuaString).String())
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	_, err = myFunc.Call(vmlib.GoString("foo"))
+	_, err = myFunc.Call(vm.MustCreateString("foo"))
 	if err != nil {
 		fmt.Println("function error", err)
 	}
-	_, err = myFunc.Call(vmlib.NewValueVector(1, 2, 3))
+	_, err = myFunc.Call([3]float32{1, 2, 3})
 	if err != nil {
 		fmt.Println("function error", err)
 	}
@@ -296,17 +308,17 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua table: %v", err))
 	}
 	defer tab.Close() // Ensure we close the Lua table when done
-	err = tab.Set(vmlib.GoString("test"), myFunc.ToValue())
+	err = tab.Set(vm.MustCreateString("test"), myFunc)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set value in Lua table: %v", err))
 	}
 
-	testFn, err := tab.Get(vmlib.GoString("test"))
+	testFn, err := tab.Get(vm.MustCreateString("test"))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get value from Lua table: %v", err))
 	}
-	if testFn.Type() != vmlib.LuaValueFunction {
-		panic(fmt.Sprintf("Expected LuaValueFunction, got %d", testFn.Type()))
+	if _, ok := testFn.(*vmlib.LuaFunction); !ok {
+		panic(fmt.Sprintf("Expected LuaValueFunction, got %s", testFn))
 	}
 
 	// Compiler API
@@ -317,19 +329,15 @@ func main() {
 	if err != nil {
 		panic("failed to make global table")
 	}
-	err = globTab.Set(vmlib.GoString("a"), vmlib.NewValueInteger(5))
+	err = globTab.Set(vm.MustCreateString("a"), 5)
 	if err != nil {
 		panic("failed to set a")
 	}
-	clonedGlobTab, err := vm.CloneValue(globTab.ToValue())
-	if err != nil {
-		panic("failed to clone global table: " + err.Error())
-	}
-	err = globTab.Set(vmlib.GoString("_G"), clonedGlobTab)
+	err = globTab.Set(vm.MustCreateString("_G"), globTab)
 	if err != nil {
 		panic("failed to set _G")
 	}
-	err = globTab.Set(vmlib.GoString("_G"), globTab.ToValue().Clone())
+	err = globTab.Set(vm.MustCreateString("_G"), globTab)
 	if err != nil {
 		panic("failed to set _G")
 	}
@@ -380,13 +388,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if len(ret) != 1 || ret[0].Type() != vmlib.LuaValueInteger {
+	if len(ret) != 1 {
 		panic("ret is not a single integer")
 	}
-	if ret[0].(*vmlib.ValueInteger).Value() != 6 {
+	if ret[0].(int64) != 6 {
 		panic("ret[0] must be 6")
 	} else {
-		fmt.Println("got ret:", ret[0].(*vmlib.ValueInteger).Value())
+		fmt.Println("got ret:", ret[0])
 	}
 	luaFunc.Close()
 
@@ -395,7 +403,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua table for userdata metatable: %v", err))
 	}
 	// Set the __type
-	err = udMt.Set(vmlib.GoString("__type"), vmlib.GoString("MyUserDataType"))
+	err = udMt.Set(vm.MustCreateString("__type"), vm.MustCreateString("MyUserDataType"))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to set __type in Lua userdata metatable: %v", err))
 	}
@@ -467,10 +475,10 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create Lua thread: %v", err))
 	}
-	if !thread.Equals(thread) {
+	if !thread.LooseEquals(thread) {
 		panic("Expected thread to equal itself")
 	}
-	if thread.Equals(nil) {
+	if thread.LooseEquals(nil) {
 		panic("Expected thread to not equal nil")
 	}
 	defer thread.Close() // Ensure we close the Lua thread when done
@@ -512,7 +520,7 @@ func main() {
 	}
 
 	thread.Close()
-	if thread.Equals(thread) {
+	if thread.LooseEquals(thread) {
 		panic("expected closing thread to not equal itself")
 	}
 	luaFunc.Close() // Close the Lua function to avoid memory leaks
@@ -527,9 +535,9 @@ func main() {
 		panic(fmt.Sprintf("Failed to load Lua chunk for yielding: %v", err))
 	}
 
-	if luaFunc2.Equals(luaFunc) {
+	if luaFunc2.LooseEquals(luaFunc) {
 		panic("Expected luaFunc2 to be a different function than luaFunc")
-	} else if !luaFunc2.Equals(luaFunc2) {
+	} else if !luaFunc2.LooseEquals(luaFunc2) {
 		panic("Expected luaFunc2 to equal itself")
 	}
 
@@ -543,25 +551,22 @@ func main() {
 	}
 	defer thread2.Close() // Ensure we close the Lua thread when done
 	fmt.Println("Lua thread 3 created successfully:", thread2)
-	yieldFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
-		lua.YieldWith([]vmlib.Value{vmlib.GoString("yielded value")})
-		return []vmlib.Value{}, nil
+	yieldFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
+		lua.YieldWith([]any{vm.MustCreateString("yielded value")})
+		return []any{}, nil
 	})
 
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create Lua yield function: %v", err))
 	}
 	defer yieldFunc.Close() // Ensure we close the Lua function when done
-	res, err = thread2.Resume(yieldFunc.ToValue())
+	res, err = thread2.Resume(yieldFunc)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to resume Lua thread with yield function: %v", err))
 	}
 	fmt.Println("Lua thread resumed successfully with yield function, returned values:", res[0])
-	if res[0].Type() != vmlib.LuaValueString {
-		panic(fmt.Sprintf("Expected LuaValueString, got %d", res[0].Type()))
-	}
-	if res[0].(*vmlib.ValueString).Value().String() != "yielded value" {
-		panic(fmt.Sprintf("Expected 'yielded value', got '%s'", res[0].(*vmlib.ValueString).Value().String()))
+	if res[0].(*vmlib.LuaString).String() != "yielded value" {
+		panic(fmt.Sprintf("Expected 'yielded value', got %s", res[0]))
 	}
 
 	if thread2.Status() != vmlib.ThreadStatusResumable {
@@ -574,11 +579,8 @@ func main() {
 		panic(fmt.Sprintf("Failed to resume Lua thread after yield: %v", err))
 	}
 	fmt.Println("Lua thread resumed successfully after yield, returned values:", res[0])
-	if res[0].Type() != vmlib.LuaValueInteger {
-		panic(fmt.Sprintf("Expected LuaValueInteger, got %d", res[0].Type()))
-	}
-	if res[0].(*vmlib.ValueInteger).Value() != 1 {
-		panic(fmt.Sprintf("Expected 1, got %d", res[0].(*vmlib.ValueInteger).Value()))
+	if res[0].(int64) != 1 {
+		panic(fmt.Sprintf("Expected 1, got %s", res[0]))
 	}
 
 	luaFunc.Close()  // Close the previous function to avoid memory leaks
@@ -595,13 +597,13 @@ func main() {
 	}
 	vmutils.MustOk(
 		myTypeMt.Set(
-			vmlib.GoString("__tostring"),
+			vm.MustCreateString("__tostring"),
 			vmutils.Must(
-				vm2.CreateFunction(func(funcVm *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
+				vm2.CreateFunction(func(funcVm *vmlib.CallbackLua, args []any) ([]any, error) {
 					fmt.Println("test")
-					return []vmlib.Value{vmlib.GoString("hello")}, nil
+					return []any{vm.MustCreateString("hello")}, nil
 				}),
-			).ToValue(),
+			),
 		),
 	)
 	vmutils.MustOk(vm2.SetTypeMetatable(vmlib.TypeMetatableTypeBool, myTypeMt))
@@ -614,7 +616,7 @@ func main() {
 		panic(err)
 	}
 	res = vmutils.Must(luaFunc.Call())
-	if res[0].(*vmlib.ValueString).Value().String() != "hello" {
+	if res[0].(*vmlib.LuaString).String() != "hello" {
 		panic("type metatable set failed")
 	}
 
@@ -627,28 +629,28 @@ func main() {
 	}
 
 	val := vmutils.Must(vm3.RegistryValue("test"))
-	if ok, _ := val.Equals(&vmlib.ValueNil{}); !ok {
+	if val != nil {
 		panic("val is not nil")
 	}
-	vmutils.MustOk(vm3.SetRegistryValue("", vmlib.GoString("foo")))
+	vmutils.MustOk(vm3.SetRegistryValue("", vm.MustCreateString("foo")))
 	val = vmutils.Must(vm3.RegistryValue("test"))
-	if ok, _ := val.Equals(&vmlib.ValueNil{}); !ok {
+	if val != nil {
 		panic("val is not nil")
 	}
 	val = vmutils.Must(vm3.RegistryValue(""))
-	if ok, _ := val.Equals(vmlib.GoString("foo")); !ok {
+	if val.(*vmlib.LuaString).LooseEquals(vm.MustCreateString("foo")); !ok {
 		panic("val is not foo")
 	}
 
-	vmutils.MustOk(vm3.SetRegistryValue("test", vmlib.GoString("foo")))
+	vmutils.MustOk(vm3.SetRegistryValue("test", vm.MustCreateString("foo")))
 	val = vmutils.Must(vm3.RegistryValue("test"))
-	if ok, _ := val.Equals(vmlib.GoString("foo")); !ok {
+	if ok := val.(*vmlib.LuaString).LooseEquals(vm.MustCreateString("foo")); !ok {
 		panic("val is not foo")
 	}
 
 	vmutils.MustOk(vm3.RemoveRegistryValue("test"))
 	val = vmutils.Must(vm3.RegistryValue("test"))
-	if ok, _ := val.Equals(&vmlib.ValueNil{}); !ok {
+	if val != nil {
 		panic("val is not nil")
 	}
 
@@ -670,15 +672,15 @@ func main() {
 	}
 	bufferPtr := buffer.Pointer()
 	fmt.Println("Lua buffer created successfully:", buffer)
-	res, err = valuePassthroughFn.Call(buffer.ToValue()) // Takes ownership of the buffer (hence the above bufferPtr)
+	res, err = valuePassthroughFn.Call(buffer) // Takes ownership of the buffer (hence the above bufferPtr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to call Lua function with buffer: %v", err))
 	}
-	if len(res) != 1 || res[0].Type() != vmlib.LuaValueBuffer {
-		panic(fmt.Sprintf("Expected LuaValueBuffer, got %d", res[0].Type()))
+	if len(res) != 1 {
+		panic(fmt.Sprintf("Expected one return value: %s", res[0]))
 	}
-	fmt.Println("Lua buffer passed through function successfully:", res[0].(*vmlib.ValueBuffer).Value().String())
-	if res[0].(*vmlib.ValueBuffer).Value().Pointer() != bufferPtr {
+	fmt.Println("Lua buffer passed through function successfully:", res[0].(*vmlib.LuaBuffer).String())
+	if res[0].(*vmlib.LuaBuffer).Pointer() != bufferPtr {
 		panic("Returned buffer pointer does not match original buffer pointer")
 	}
 
@@ -686,15 +688,15 @@ func main() {
 	luaString = vmutils.Must(vm3.CreateString("test string data"))
 	luaStringPtr := luaString.Pointer()
 	fmt.Println("Lua string created successfully:", luaString)
-	res, err = valuePassthroughFn.Call(luaString.ToValue()) // Takes ownership of the string (hence the above luaStringPtr)
+	res, err = valuePassthroughFn.Call(luaString) // Takes ownership of the string (hence the above luaStringPtr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to call Lua function with string: %v", err))
 	}
-	if len(res) != 1 || res[0].Type() != vmlib.LuaValueString {
-		panic(fmt.Sprintf("Expected LuaValueString, got %d", res[0].Type()))
+	if len(res) != 1 {
+		panic(fmt.Sprintf("Expected one return value [2]: %s", res[0]))
 	}
-	fmt.Println("Lua string passed through function successfully:", res[0].(*vmlib.ValueString).Value().String())
-	if res[0].(*vmlib.ValueString).Value().Pointer() != luaStringPtr {
+	fmt.Println("Lua string passed through function successfully:", res[0].(*vmlib.LuaString).String())
+	if res[0].(*vmlib.LuaString).Pointer() != luaStringPtr {
 		panic("Returned string pointer does not match original string pointer")
 	}
 
@@ -702,31 +704,31 @@ func main() {
 	luaTable = vmutils.Must(vm3.CreateTable())
 	luaTablePtr := luaTable.Pointer()
 	fmt.Println("Lua table created successfully:", luaTable)
-	res, err = valuePassthroughFn.Call(luaTable.ToValue()) // Takes ownership of the table (hence the above luaTablePtr)
+	res, err = valuePassthroughFn.Call(luaTable) // Takes ownership of the table (hence the above luaTablePtr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to call Lua function with table: %v", err))
 	}
-	if len(res) != 1 || res[0].Type() != vmlib.LuaValueTable {
-		panic(fmt.Sprintf("Expected LuaValueTable, got %d", res[0].Type()))
+	if len(res) != 1 {
+		panic(fmt.Sprintf("Expected one return value [3]: %s", res[0]))
 	}
-	fmt.Println("Lua table passed through function successfully:", res[0].(*vmlib.ValueTable).Value().String())
-	if res[0].(*vmlib.ValueTable).Value().Pointer() != luaTablePtr {
+	fmt.Println("Lua table passed through function successfully:", res[0].(*vmlib.LuaTable).String())
+	if res[0].(*vmlib.LuaTable).Pointer() != luaTablePtr {
 		panic("Returned table pointer does not match original table pointer")
 	}
 
 	// UserData
-	ud = vmutils.Must(vm3.CreateUserData("test userdata", res[0].(*vmlib.ValueTable).Value()))
+	ud = vmutils.Must(vm3.CreateUserData("test userdata", res[0].(*vmlib.LuaTable)))
 	udPtr := ud.Pointer()
 	fmt.Println("Lua user data created successfully:", ud)
-	res, err = valuePassthroughFn.Call(ud.ToValue()) // Takes ownership of the user data (hence the above udPtr)
+	res, err = valuePassthroughFn.Call(ud)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to call Lua function with user data: %v", err))
 	}
-	if len(res) != 1 || res[0].Type() != vmlib.LuaValueUserData {
-		panic(fmt.Sprintf("Expected LuaValueUserData, got %d", res[0].Type()))
+	if len(res) != 1 {
+		panic(fmt.Sprintf("Expected return value [4]: %s", res[0]))
 	}
-	fmt.Println("Lua user data passed through function successfully:", res[0].(*vmlib.ValueUserData).Value())
-	if res[0].(*vmlib.ValueUserData).Value().Pointer() != udPtr {
+	fmt.Println("Lua user data passed through function successfully:", res[0].(*vmlib.LuaUserData))
+	if res[0].(*vmlib.LuaUserData).Pointer() != udPtr {
 		panic("Returned user data pointer does not match original user data pointer")
 	}
 
@@ -760,17 +762,17 @@ func main() {
 		"nextluaurcarea/baz.luau": "return require('@dir-alias-2/chainy')",
 		"dogs/3/chainy.luau":      "return 3",
 		".luaurc": `{
-			"aliases": {
-				"dir-alias": "./foo/dir-alias",
-				"dir-alias-2": "./dogs/2",
-			}
-		}`,
+				"aliases": {
+					"dir-alias": "./foo/dir-alias",
+					"dir-alias-2": "./dogs/2",
+				}
+			}`,
 		"nextluaurcarea/.luaurc": `{
-			"aliases": {
-				"dir-alias": "../foo/dir-alias",
-				"dir-alias-2": "../dogs/3"
-			}
-		}`,
+				"aliases": {
+					"dir-alias": "../foo/dir-alias",
+					"dir-alias-2": "../dogs/3"
+				}
+			}`,
 	})
 	simpleRequirer := require.NewSimpleRequirer("requireCachePrefix", vm4.Globals(), require.NewUnixVfs(mapFs), true)
 	requireFunc, err := vm4.CreateRequireFunction(simpleRequirer)
@@ -780,7 +782,7 @@ func main() {
 
 	fmt.Println("Require function created successfully:", requireFunc)
 
-	vm4.Globals().Set(vmlib.GoString("require"), requireFunc.ToValue()) // This consumes requireFunc so no need to explictly close it
+	vm4.Globals().Set(vm.MustCreateString("require"), requireFunc) // This consumes requireFunc so no need to explictly close it
 
 	chunkFunc, err := vm4.LoadChunk(vmlib.ChunkOpts{
 		Name: "/",
@@ -796,8 +798,8 @@ func main() {
 	if len(res) != 1 {
 		panic("expected 1 result from require test, got " + fmt.Sprint(len(res)))
 	}
-	if ok, _ := res[0].Equals(vmlib.NewValueInteger(3)); !ok {
-		panic("expected require test to return 3, got " + res[0].String())
+	if res[0] != 3 {
+		panic("expected require test to return 3, got " + vmlib.StringifyValue(res[0]))
 	}
 
 	vm4.Close() // Ensure we close the VM when done

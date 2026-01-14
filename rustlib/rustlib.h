@@ -23,10 +23,11 @@ struct GoNoneResult luavm_setmemorylimit(struct Lua* ptr, size_t limit);
 size_t luago_used_memory(struct Lua* ptr);
 size_t luago_memory_limit(struct Lua* ptr);
 struct GoNoneResult luavm_sandbox(struct Lua* ptr, bool enabled);
-struct LuaTable* luago_globals(struct Lua* ptr);
-struct GoNoneResult luago_setglobals(struct Lua* ptr, struct LuaTable* globals);
-struct LuaThread* luago_current_thread(struct Lua* ptr);
-void luago_set_type_metatable(struct Lua* ptr, uint8_t typ, struct LuaTable* mt);
+struct GoLuaValueV2 luago_globals(struct Lua* ptr);
+struct GoNoneResult luago_setglobals(struct Lua* ptr, struct GoLuaValueV2 globals);
+struct GoLuaValueV2 luago_current_thread(struct Lua* ptr);
+// given mt is a table.
+void luago_set_type_metatable(struct Lua* ptr, uint8_t typ, struct GoLuaValueV2 mt);
 void freeluavm(struct Lua* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
@@ -41,16 +42,12 @@ struct IGoCallback {
     uintptr_t handle;
 };
 
-// Test callbacks
-void test_callback(struct IGoCallback* cb, void* val);
-
 // Rust String API
 char* luago_string_new(const char* str, size_t len);
 void luago_string_free(char* result_error_ptr);
 
 // Returns a GoResult[LuaString]
-struct GoStringResult luago_create_string(struct Lua* ptr, const char* str, size_t len);
-struct LuaString;
+struct GoValueV2Result luago_create_string(struct Lua* lua, const char* str, size_t len);
 
 struct LuaStringBytes {
     // Pointer to the string data
@@ -59,158 +56,143 @@ struct LuaStringBytes {
     size_t len;
 };
 
-struct LuaStringBytes luago_string_as_bytes(struct LuaString* ptr);
-struct LuaStringBytes luago_string_as_bytes_with_nul(struct LuaString* ptr);
-uintptr_t luago_string_to_pointer(struct LuaString* ptr);
-bool luago_string_equals(struct LuaString* a, struct LuaString* b);
-void luago_free_string(struct LuaString* ptr);
+struct LuaStringBytes luago_string_as_bytes(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct LuaStringBytes luago_string_as_bytes_with_nul(struct Lua* lua, struct GoLuaValueV2 ptr);
 
-// GoLuaValue related stuff
+// GoLuaValueV2 related stuff
 
-typedef enum LuaValueType {
-    LuaValueTypeNil = 0,
-    LuaValueTypeBoolean = 1,
-    LuaValueTypeLightUserData = 2,
-    LuaValueTypeInteger = 3,
-    LuaValueTypeNumber = 4,
-    LuaValueTypeVector = 5,
-    LuaValueTypeString = 6,
-    LuaValueTypeTable = 7,
-    LuaValueTypeFunction = 8,
-    LuaValueTypeThread = 9,
-    LuaValueTypeUserData = 10,
-    LuaValueTypeBuffer = 11,
-    LuaValueTypeOther = 12
-} LuaValueType;
+typedef enum LuaValueTypeV2 {
+    LuaValueTypeV2Nil = 0,
+    LuaValueTypeV2Boolean = 1,
+    LuaValueTypeV2LightUserData = 2,
+    LuaValueTypeV2Integer = 3,
+    LuaValueTypeV2Number = 4,
+    LuaValueTypeV2Vector = 5,
+    LuaValueTypeV2String = 6,
+    LuaValueTypeV2Table = 7,
+    LuaValueTypeV2Function = 8,
+    LuaValueTypeV2Thread = 9,
+    LuaValueTypeV2UserData = 10,
+    LuaValueTypeV2Buffer = 11,
+    LuaValueTypeV2Other = 12
+} LuaValueTypeV2;
 
-typedef union LuaValueData {
+struct Handle {
+    int64_t index;
+    int64_t generation;
+};
+
+typedef union LuaValueDataV2 {
     bool boolean;
-    void* light_userdata; // no drop needed for light userdata
     int64_t integer;
     double number;
     float vector[3]; // 3d vector
-    struct LuaString* string; // Pointer to LuaString
-    void* table; // Pointer to LuaTable
-    void* function; // Pointer to LuaFunction
-    void* thread; // Pointer to LuaThread
-    void* userdata; // Pointer to LuaUserData
-    void* buffer; // Pointer to LuaBuffer
-    void* other; // Placeholder for other types
-} LuaValueData;
+    struct Handle handle; // for string, table, function, thread, userdata, buffer, other
+    void* lightuserdata; // no drop needed for light userdata
+} LuaValueDataV2;
 
-struct GoLuaValue {
-    // The type of the Lua value
-    LuaValueType tag;
+struct GoLuaValueV2 {
+    // The type of the Lua value 
+    LuaValueTypeV2 tag;
     // The actual data of the Lua value 
-    LuaValueData data;
+    LuaValueDataV2 data;
 };
 
-struct GoLuaValue luago_value_clone(struct GoLuaValue value);
-void luago_value_destroy(struct GoLuaValue value);
+void luago_valuev2_destroy(struct Lua* lua, struct GoLuaValueV2 value);
+uintptr_t luago_valuev2_topointer(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoBoolResult luago_valuev2_equals(struct Lua* lua, struct GoLuaValueV2 a, struct GoLuaValueV2 b);
+
+struct GoLuaValueV2Array {
+    struct GoLuaValueV2* values;
+    size_t size;
+};
+
+struct GoLuaValueV2Array luago_valuev2array_alloc(size_t size);
+void luago_valuev2array_destroy(struct GoLuaValueV2Array arr);
 
 // Table API
-struct LuaTable;
-struct GoTableResult luago_create_table(struct Lua* ptr);
-struct GoTableResult luago_create_table_with_capacity(struct Lua* ptr, size_t narr, size_t nrec);
-struct GoNoneResult luago_table_clear(struct LuaTable* ptr);
-struct GoBoolResult luago_table_contains_key(struct LuaTable* ptr, struct GoLuaValue key);
-struct GoBoolResult luago_table_equals(struct LuaTable* ptr, struct LuaTable* other);
+struct GoValueV2Result luago_create_table(struct Lua* lua);
+struct GoValueV2Result luago_create_table_with_capacity(struct Lua* lua, size_t narr, size_t nrec);
+struct GoNoneResult luago_table_clear(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoBoolResult luago_table_contains_key(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 key);
 struct TableForEachCallbackData {
-    struct GoLuaValue key;
-    struct GoLuaValue value;
+    struct GoLuaValueV2 key;
+    struct GoLuaValueV2 value;
     // Go code may modify the below
     bool stop;
 };
-struct GoNoneResult luago_table_foreach(struct LuaTable* ptr, struct IGoCallback cb);
-struct GoValueResult luago_table_get(struct LuaTable* ptr, struct GoLuaValue key);
-bool luago_table_is_empty(struct LuaTable* ptr);
-bool luago_table_is_readonly(struct LuaTable* ptr);
-struct GoI64Result luago_table_len(struct LuaTable* ptr);
-struct LuaTable* luago_table_metatable(struct LuaTable* ptr);
-struct GoValueResult luago_table_pop(struct LuaTable* ptr);
-struct GoNoneResult luago_table_push(struct LuaTable* ptr, struct GoLuaValue value);
-struct GoValueResult luago_table_raw_get(struct LuaTable* ptr, struct GoLuaValue key);
-struct GoNoneResult luago_table_raw_insert(struct LuaTable* ptr, int64_t idx, struct GoLuaValue value);
-size_t luago_table_raw_len(struct LuaTable* ptr);
-struct GoValueResult luago_table_raw_pop(struct LuaTable* ptr);
-struct GoNoneResult luago_table_raw_push(struct LuaTable* ptr, struct GoLuaValue value);
-struct GoNoneResult luago_table_raw_remove(struct LuaTable* ptr, struct GoLuaValue key);
-struct GoNoneResult luago_table_raw_set(struct LuaTable* ptr, struct GoLuaValue key, struct GoLuaValue value);
-struct GoNoneResult luago_table_set(struct LuaTable* ptr, struct GoLuaValue key, struct GoLuaValue value);
+struct GoNoneResult luago_table_foreach(struct Lua* lua, struct GoLuaValueV2 ptr, struct IGoCallback cb);
+struct GoValueV2Result luago_table_get(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 key);
+bool luago_table_is_empty(struct Lua* lua, struct GoLuaValueV2 ptr);
+bool luago_table_is_readonly(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoI64Result luago_table_len(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoLuaValueV2 luago_table_metatable(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoValueV2Result luago_table_pop(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoNoneResult luago_table_push(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 value);
+struct GoValueV2Result luago_table_raw_get(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 key);
+struct GoNoneResult luago_table_raw_insert(struct Lua* lua, struct GoLuaValueV2 ptr, int64_t idx, struct GoLuaValueV2 value);
+size_t luago_table_raw_len(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoValueV2Result luago_table_raw_pop(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoNoneResult luago_table_raw_push(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 value);
+struct GoNoneResult luago_table_raw_remove(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 key);
+struct GoNoneResult luago_table_raw_set(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 key, struct GoLuaValueV2 value);
+struct GoNoneResult luago_table_set(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 key, struct GoLuaValueV2 value);
 struct TableForEachValueCallbackData {
-    struct GoLuaValue value;
+    struct GoLuaValueV2 value;
     // Go code may modify the below
     bool stop;
 };
-struct GoNoneResult luago_table_foreach_value(struct LuaTable* ptr, struct IGoCallback cb);
-struct GoNoneResult luago_table_set_metatable(struct LuaTable* ptr, struct LuaTable* mt);
-void luago_table_set_readonly(struct LuaTable* ptr, bool enabled);
-void luago_table_set_safeenv(struct LuaTable* ptr, bool enabled);
-uintptr_t luago_table_to_pointer(struct LuaTable* ptr);
-char* luago_table_debug(struct LuaTable* ptr);
-void luago_free_table(struct LuaTable* ptr);
+struct GoNoneResult luago_table_foreach_value(struct Lua* lua, struct GoLuaValueV2 ptr, struct IGoCallback cb);
+struct GoNoneResult luago_table_set_metatable(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 mt);
+void luago_table_set_readonly(struct Lua* lua, struct GoLuaValueV2 ptr, bool enabled);
+void luago_table_set_safeenv(struct Lua* lua, struct GoLuaValueV2 ptr, bool enabled);
+char* luago_table_debug(struct Lua* lua, struct GoLuaValueV2 ptr);
 
 // Functions
-struct LuaFunction;
 struct FunctionCallbackData {
     struct Lua* lua;
-    struct GoMultiValue* args; // NOTE: Rust will deallocate this
+    struct GoLuaValueV2Array args; // NOTE: Rust will deallocate this so go must copy this if needed
 
     // Go side may set this to set a response
-    struct GoMultiValue* values; // NOTE: Rust will deallocate this
+    struct GoLuaValueV2Array values; // NOTE: Rust will deallocate this
     char* error; // NOTE: Rust will deallocate this
 };
-struct GoFunctionResult luago_create_function(struct Lua* ptr, struct IGoCallback cb);
-struct GoMultiValueResult luago_function_call(struct LuaFunction* ptr, struct GoMultiValue* args);
-uintptr_t luago_function_to_pointer(struct LuaFunction* ptr);
-struct GoFunctionResult luago_function_deepclone(struct LuaFunction* ptr);
-struct LuaTable* luago_function_environment(struct LuaFunction* ptr);
-struct GoBoolResult luago_function_set_environment(struct LuaFunction* ptr, struct LuaTable* table);
-bool luago_function_equals(struct LuaFunction* a, struct LuaFunction* b);
-void luago_free_function(struct LuaFunction* f);
+struct GoValueV2Result luago_create_function(struct Lua* lua, struct IGoCallback cb);
+struct GoLuaValueV2ArrayResult luago_function_call(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2Array args);
+struct GoValueV2Result luago_function_deepclone(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoLuaValueV2 luago_function_environment(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoBoolResult luago_function_set_environment(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 table);
 
 // Userdata API
-struct LuaUserData;
 struct DynamicData {
-    uint64_t handle; // cgo handle to the data
+    uintptr_t handle; // cgo handle to the data
     DropCallback drop; // cgo drop callback
 };
-struct GoUserDataResult luago_create_userdata(struct Lua* ptr, struct DynamicData data, struct LuaTable* mt);
-struct GoUsizePtrResult luago_get_userdata_handle(struct LuaUserData* ptr);
-uintptr_t luago_userdata_to_pointer(struct LuaUserData* ptr);
-struct GoTableResult luago_userdata_metatable(struct LuaUserData* ptr);
-bool luago_userdata_equals(struct LuaUserData* a, struct LuaUserData* b);
-void luago_free_userdata(struct LuaUserData* ptr);
+struct GoValueV2Result luago_create_userdata(struct Lua* lua, struct DynamicData data, struct GoLuaValueV2 mt);
+struct GoUsizePtrResult luago_get_userdata_handle(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoValueV2Result luago_userdata_metatable(struct Lua* lua, struct GoLuaValueV2 ptr);
 
 // Thread API
-struct LuaThread;
-struct GoThreadResult luago_create_thread(struct Lua* ptr, struct LuaFunction* func);
-struct GoNoneResult luago_reset_thread(struct LuaThread* ptr, struct LuaFunction* func);
-uint8_t luago_thread_status(struct LuaThread* ptr);
-struct GoNoneResult luago_thread_sandbox(struct LuaThread* ptr);
-struct GoMultiValueResult luago_thread_resume(struct LuaThread* ptr, struct GoMultiValue* args);
-struct GoMultiValueResult luago_thread_resume_error(struct LuaThread* ptr, struct GoLuaValue error);
-uintptr_t luago_thread_to_pointer(struct LuaThread* ptr);
-struct GoNoneResult luago_yield_with(struct Lua* ptr, struct GoMultiValue* args);
-bool luago_thread_equals(struct LuaThread* a, struct LuaThread* b);
-void luago_free_thread(struct LuaThread* ptr);
+struct GoValueV2Result luago_create_thread(struct Lua* lua, struct GoLuaValueV2 func);
+struct GoNoneResult luago_reset_thread(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 func);
+uint8_t luago_thread_status(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoNoneResult luago_thread_sandbox(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct GoLuaValueV2ArrayResult luago_thread_resume(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2Array args);
+struct GoLuaValueV2ArrayResult luago_thread_resume_error(struct Lua* lua, struct GoLuaValueV2 ptr, struct GoLuaValueV2 error);
+struct GoNoneResult luago_yield_with(struct Lua* lua, struct GoLuaValueV2Array args);
 
 // Buffer API
-struct LuaBuffer;
-struct GoBufferResult luago_create_buffer(struct Lua* ptr, const char* s, size_t len);
-uintptr_t luago_buffer_to_pointer(struct LuaBuffer* ptr);
-bool luago_buffer_equals(struct LuaBuffer* a, struct LuaBuffer* b);
-struct LuaStringBytes luago_buffer_to_bytes(struct LuaBuffer* ptr);
-struct LuaStringBytes luago_buffer_read_bytes(struct LuaBuffer* ptr, size_t offset, size_t len);
-void luago_buffer_write_bytes(struct LuaBuffer* ptr, size_t offset, const char* bytes, size_t len);
+struct GoValueV2Result luago_create_buffer(struct Lua* ptr, const char* s, size_t len);
+struct LuaStringBytes luago_buffer_to_bytes(struct Lua* lua, struct GoLuaValueV2 ptr);
+struct LuaStringBytes luago_buffer_read_bytes(struct Lua* lua, struct GoLuaValueV2 ptr, size_t offset, size_t len);
+void luago_buffer_write_bytes(struct GoLuaValueV2 lua, size_t offset, const char* bytes, size_t len);
 void luago_buffer_free_bytes(struct LuaStringBytes bytes);
-size_t luago_buffer_len(struct LuaBuffer* ptr);
-void luago_free_buffer(struct LuaBuffer* ptr);
+size_t luago_buffer_len(struct Lua* lua, struct GoLuaValueV2 ptr);
 
-// Result types
-
+// Result types 
+ 
 struct GoNoneResult {
-    char* error;
+    char* error; 
 };
 struct GoBoolResult {
     bool value;
@@ -224,64 +206,20 @@ struct GoUsizePtrResult {
     uintptr_t value;
     char* error;
 };
-struct GoStringResult {
-    // Pointer to the string value
-    struct LuaString* value;
-    // Pointer to a null-terminated C string for the error message
-    char* error;
-};
-struct GoTableResult {
-    // Pointer to the LuaTable value
-    struct LuaTable* value;
-    // Pointer to a null-terminated C string for the error message
-    char* error;
-};
-struct GoFunctionResult {
-    // Pointer to the LuaTable value
-    struct LuaFunction* value;
-    // Pointer to a null-terminated C string for the error message
-    char* error;
-};
-struct GoThreadResult {
-    // Pointer to the LuaThread value
-    struct LuaThread* value;
-    // Pointer to a null-terminated C string for the error message
-    char* error;
-};
-struct GoBufferResult {
-    // Pointer to the LuaBuffer value
-    struct LuaBuffer* value;
-    // Pointer to a null-terminated C string for the error message
-    char* error;
-};
-struct GoUserDataResult {
-    // Pointer to the LuaUserData value
-    struct LuaUserData* value;
-    // Pointer to a null-terminated C string for the error message
-    char* error;
-};
-struct GoMultiValueResult {
-    struct GoMultiValue* value;
-    char* error;
-};
-
-struct GoValueResult {
+struct GoValueV2Result {
     // The Lua value
-    struct GoLuaValue value;
+    struct GoLuaValueV2 value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoLuaValueV2ArrayResult {
+    // The array of Lua values
+    struct GoLuaValueV2Array value;
     // Pointer to a null-terminated C string for the error message
     char* error;
 };
 
 // Result types end
-
-// Multivalue handling
-struct GoMultiValue;
-struct GoMultiValue* luago_create_multivalue_with_capacity(size_t capacity);
-void luago_multivalue_push(struct GoMultiValue* mv, struct GoLuaValue value);
-size_t luago_multivalue_len(struct GoMultiValue* mv);
-struct GoLuaValue luago_multivalue_pop(struct GoMultiValue* mv);
-void luago_free_multivalue(struct GoMultiValue* mv);
-// Multivalue handling end
 
 // ChunkOpts API
 struct ChunkString;
@@ -291,7 +229,7 @@ struct ChunkOpts {
     // The name of the chunk, used for debugging and error messages.
     struct ChunkString* name;
     // The environment table for the chunk.
-    struct LuaTable* env;
+    struct GoLuaValueV2 env;
     // The chunks mode (either text or binary).
     uint8_t mode;
     // The compiler options for the chunk.
@@ -299,7 +237,7 @@ struct ChunkOpts {
     // The actual code of the chunk.
     struct ChunkString* code;
 };
-struct GoFunctionResult luago_load_chunk(struct Lua* ptr, struct ChunkOpts opts);
+struct GoValueV2Result luago_load_chunk(struct Lua* ptr, struct ChunkOpts opts);
 
 // Interrupt API
 struct InterruptData {
@@ -314,8 +252,8 @@ void luago_set_interrupt(struct Lua* ptr, struct IGoCallback cb);
 void luago_remove_interrupt(struct Lua* ptr);
 
 // Registry
-struct GoNoneResult luago_set_named_registry_value(struct Lua* ptr, const char* key, size_t keylen, struct GoLuaValue value);
-struct GoValueResult luago_named_registry_value(struct Lua* ptr, const char* key, size_t keylen);
+struct GoNoneResult luago_set_named_registry_value(struct Lua* ptr, const char* key, size_t keylen, struct GoLuaValueV2 value);
+struct GoValueV2Result luago_named_registry_value(struct Lua* ptr, const char* key, size_t keylen);
 
 // Require API
 struct GoNavigationResult {
@@ -353,7 +291,7 @@ struct Config {
 
 struct Loader {
     struct Lua* lua; // Pointer to the Lua instance
-    struct LuaFunction* function; // Go side may set this in response
+    struct GoLuaValueV2 function; // Go side may set this in response
     char* error; // Pointer to a null-terminated C string for the error message
 };
 
@@ -379,4 +317,4 @@ struct GoRequire {
     // Gets the loader function for the current module
     struct IGoCallback loader;
 };
-struct GoFunctionResult luago_create_require_function(struct Lua* ptr, struct GoRequire gr);
+struct GoValueV2Result luago_create_require_function(struct Lua* ptr, struct GoRequire gr);

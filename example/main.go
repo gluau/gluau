@@ -23,36 +23,36 @@ func main() {
 
 	// Create a Go function that appends strings
 	// This will be called from Luau
-	appendFunc, err := lua.CreateFunction(func(cb *vm.CallbackLua, args []vm.Value) ([]vm.Value, error) {
+	appendFunc, err := lua.CreateFunction(func(cb *vm.CallbackLua, args []any) ([]any, error) {
 		if len(args) < 2 {
 			return nil, fmt.Errorf("append requires 2 string arguments")
 		}
 
 		// Get the first string argument
-		str1, ok := args[0].(*vm.ValueString)
+		str1, ok := args[0].(*vm.LuaString)
 		if !ok {
-			return nil, fmt.Errorf("argument 1 must be a string, got %s", args[0].Type())
+			return nil, fmt.Errorf("argument 1 must be a string, got %s", args[0])
 		}
 
 		// Get the second string argument
-		str2, ok := args[1].(*vm.ValueString)
+		str2, ok := args[1].(*vm.LuaString)
 		if !ok {
-			return nil, fmt.Errorf("argument 2 must be a string, got %s", args[1].Type())
+			return nil, fmt.Errorf("argument 2 must be a string, got %s", args[1])
 		}
 
 		// Append the strings in Go
-		result := str1.Value().String() + str2.Value().String()
-		fmt.Printf("[Go] Appending '%s' + '%s' = '%s'\n", str1.Value().String(), str2.Value().String(), result)
+		result := str1.String() + str2.String()
+		fmt.Printf("[Go] Appending '%s' + '%s' = '%s'\n", str1.String(), str2.String(), result)
 
 		// Return the result back to Luau
-		return []vm.Value{vm.GoString(result)}, nil
+		return []any{cb.MainState().MustCreateString(result)}, nil
 	})
 	if err != nil {
 		log.Fatal("Failed to create Go function:", err)
 	}
 
 	// Set the function as a global in Luau
-	err = lua.Globals().Set(vm.GoString("append_strings"), appendFunc.ToValue())
+	err = lua.Globals().Set(lua.MustCreateString("append_strings"), appendFunc)
 	if err != nil {
 		log.Fatal("Failed to set global:", err)
 	}
@@ -89,14 +89,9 @@ func main() {
 
 	// Get the result back in Go
 	if len(results) > 0 {
-		if str, ok := results[0].(*vm.ValueString); ok {
+		if str, ok := results[0].(*vm.LuaString); ok {
 			fmt.Println()
-			fmt.Printf("[Go] Final result from Luau: '%s'\n", str.Value().String())
+			fmt.Printf("[Go] Final result from Luau: '%s'\n", str.String())
 		}
-	}
-
-	// Clean up results
-	for _, r := range results {
-		r.Close()
 	}
 }

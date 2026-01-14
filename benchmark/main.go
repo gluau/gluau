@@ -211,8 +211,7 @@ func runGluau(code string) string {
 	}
 
 	if len(results) > 0 {
-		defer results[0].Close()
-		return results[0].String()
+		return vm.StringifyValue(results[0])
 	}
 	return "nil"
 }

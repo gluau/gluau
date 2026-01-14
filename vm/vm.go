@@ -7,6 +7,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"unsafe"
 )
 
@@ -31,6 +32,13 @@ func (l *Lua) String() string {
 		return "<closed Lua VM>"
 	}
 	return fmt.Sprintf("Lua VM: 0x%x", pt)
+}
+
+func (l *Lua) ptr() *C.struct_Lua {
+	if l.object.ptr == nil {
+		panic("attempted to access closed Lua VM")
+	}
+	return (*C.struct_Lua)(unsafe.Pointer(l.object.ptr))
 }
 
 func (l *Lua) lua() (*C.struct_Lua, error) {
@@ -124,35 +132,31 @@ const (
 // - The metatable will be shared by all values of the given type.
 // - mt can be set to nil to remove the metatable
 func (l *Lua) SetTypeMetatable(typ TypeMetatableType, mt *LuaTable) error {
-	var mtPtr *C.struct_LuaTable = nil
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return err
+	}
+
 	if mt != nil {
 		if mt.lua != l {
 			return fmt.Errorf("cannot create userdata with metatable from different Lua instance")
 		}
 
-		defer mt.object.RUnlock()
-		mt.object.RLock()
-		metaPtr, err := mt.innerPtr()
-		if err != nil {
-			return err // Return error if the metatable is closed
-		}
-		mtPtr = metaPtr
+		return withBaseRefNoRet(mt.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+			C.luago_set_type_metatable(lua, C.uint8_t(typ), ptr)
+			return nil
+		})
 	}
 
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	lua, err := l.lua()
-	if err != nil {
-		return err
-	}
-
-	C.luago_set_type_metatable(lua, C.uint8_t(typ), mtPtr)
+	C.luago_set_type_metatable(lua, C.uint8_t(typ), nullCValueV2())
 	return nil
 }
 
 // SetRegistryValue sets a value on the Lua registry with a given key name
-func (l *Lua) SetRegistryValue(key string, value Value) error {
+func (l *Lua) SetRegistryValue(key string, value any) error {
 	l.object.RLock()
 	defer l.object.RUnlock()
 
@@ -161,7 +165,8 @@ func (l *Lua) SetRegistryValue(key string, value Value) error {
 		return err
 	}
 
-	valueVal, err := l.valueToC(value)
+	valueVal, err, _ := valueToC(value)
+
 	if err != nil {
 		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
 	}
@@ -184,7 +189,7 @@ func (l *Lua) SetRegistryValue(key string, value Value) error {
 }
 
 // RegistryValue returns a value on the Lua registry with a given key name
-func (l *Lua) RegistryValue(key string) (Value, error) {
+func (l *Lua) RegistryValue(key string) (any, error) {
 	l.object.RLock()
 	defer l.object.RUnlock()
 
@@ -199,7 +204,7 @@ func (l *Lua) RegistryValue(key string) (Value, error) {
 			err := moveErrorToGo(res.error)
 			return nil, err
 		}
-		return l.valueFromC(res.value), nil
+		return castValue(l, res.value), nil
 	}
 	keyBytes := []byte(key)
 	res := C.luago_named_registry_value(lua, (*C.char)(unsafe.Pointer(&keyBytes[0])), C.size_t(len(key)))
@@ -207,14 +212,14 @@ func (l *Lua) RegistryValue(key string) (Value, error) {
 		err := moveErrorToGo(res.error)
 		return nil, err
 	}
-	return l.valueFromC(res.value), nil
+	return castValue(l, res.value), nil
 }
 
 // RemoveRegistryValue removes a value on the Lua registry with a given key name
 //
 // Equivalent to SetRegistryValue with value of nil
 func (l *Lua) RemoveRegistryValue(key string) error {
-	return l.SetRegistryValue(key, &ValueNil{})
+	return l.SetRegistryValue(key, nil)
 }
 
 // Sandbox enables or disables the sandbox mode for the Luau VM.
@@ -254,10 +259,12 @@ func (l *Lua) Globals() *LuaTable {
 		return nil
 	}
 	globals := C.luago_globals(lua)
-	if globals == nil {
-		return nil // Return nil if the globals table is not available
+	tab, ok := castValue(l, globals).(*LuaTable)
+	if !ok {
+		return nil
 	}
-	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(globals)), tableTab), lua: l}
+
+	return tab
 }
 
 // SetGlobals sets the global environment table of the Lua VM.
@@ -280,18 +287,14 @@ func (l *Lua) SetGlobals(tab *LuaTable) error {
 	if tab == nil {
 		return errors.New("globals table cannot be nil")
 	}
-	defer tab.object.RUnlock()
-	tab.object.RLock()
-	tabPtr, err := tab.innerPtr()
-	if err != nil {
-		return err // Return error if the table is closed
-	}
-	res := C.luago_setglobals(lua, tabPtr)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+	return withBaseRefNoRet(tab.BaseRef, func(tabptr C.struct_GoLuaValueV2) error {
+		res := C.luago_setglobals(lua, tabptr)
+		if res.error != nil {
+			err := moveErrorToGo(res.error)
+			return err
+		}
+		return nil
+	})
 }
 
 type VmState int
@@ -388,16 +391,27 @@ func (l *Lua) MainThread() *LuaThread {
 	}
 
 	thread := C.luago_current_thread(lua)
-	if thread == nil {
-		return nil // Return nil if the main thread is not available
+	threadVal, ok := castValue(l, thread).(*LuaThread)
+	if !ok {
+		return nil
 	}
-
-	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(thread)), threadTab), lua: l}
+	return threadVal
 }
 
 // CreateString creates a Lua string from a Go string.
 func (l *Lua) CreateString(s string) (*LuaString, error) {
 	return l.createString([]byte(s))
+}
+
+// CreateString creates a Lua string from a Go string.
+func (l *Lua) MustCreateString(s string) *LuaString {
+	st, err := l.createString([]byte(s))
+
+	if err != nil {
+		panic(fmt.Sprintf("failed to create Lua string: %v", err))
+	}
+
+	return st
 }
 
 // CreateStringBytes creates a Lua string from a byte slice.
@@ -421,40 +435,22 @@ func (l *Lua) createString(s []byte) (*LuaString, error) {
 		if res.error != nil {
 			return nil, moveErrorToGo(res.error)
 		}
-		return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab), lua: l}, nil
-	}
-
-	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
-	if res.error != nil {
-		return nil, moveErrorToGo(res.error)
-	}
-	return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab), lua: l}, nil
-}
-
-// Create string as pointer (without any finalizer)
-func (l *Lua) createStringAsPtr(s []byte) (*C.struct_LuaString, error) {
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	lua, err := l.lua()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(s) == 0 {
-		// Passing nil to luago_create_string creates an empty string.
-		res := C.luago_create_string(lua, (*C.char)(nil), C.size_t(len(s)))
-		if res.error != nil {
-			return nil, moveErrorToGo(res.error)
+		str, ok := castValue(l, res.value).(*LuaString)
+		if !ok {
+			return nil, fmt.Errorf("expected LuaString from string creation, got %T", str)
 		}
-		return res.value, nil
+		return str, nil
 	}
 
 	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	if res.error != nil {
 		return nil, moveErrorToGo(res.error)
 	}
-	return res.value, nil
+	str, ok := castValue(l, res.value).(*LuaString)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaString from string creation, got %T", str)
+	}
+	return str, nil
 }
 
 // CreateTable creates a new Lua table.
@@ -472,7 +468,11 @@ func (l *Lua) CreateTable() (*LuaTable, error) {
 		err := moveErrorToGo(res.error)
 		return nil, err
 	}
-	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
+	tab, ok := castValue(l, res.value).(*LuaTable)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaTable from table creation, got %T", tab)
+	}
+	return tab, nil
 }
 
 // CreateTableWithCapacity creates a new Lua table with specified capacity for array and record parts.
@@ -491,18 +491,18 @@ func (l *Lua) CreateTableWithCapacity(narr, nrec int) (*LuaTable, error) {
 		err := moveErrorToGo(res.error)
 		return nil, err
 	}
-	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
+	tab, ok := castValue(l, res.value).(*LuaTable)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaTable from table creation, got %T", tab)
+	}
+	return tab, nil
 }
 
-type FunctionFn func(funcVm *CallbackLua, args []Value) ([]Value, error)
+type FunctionFn func(funcVm *CallbackLua, args []any) ([]any, error)
 
 // CreateFunction creates a new Function
 //
 // # Note that funcVm will only be open until the callback function returns
-//
-// Locking behavior: All values returned by the callback function
-// will be write-locked (taken ownership of). Having any sort of read-lock
-// to a returned argument during a return will cause a error to be returned to Luau
 func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 	l.object.RLock()
 	defer l.object.RUnlock()
@@ -526,25 +526,22 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 				}
 
 				// Replace
-				errv := moveStringToRust(fmt.Sprintf("panic in CreateFunction callback: %v", r))
+				errv := moveStringToRust(fmt.Sprintf("panic in CreateFunction callback: %v %v", r, string(debug.Stack())))
 				cval.error = errv // Rust side will deallocate it for us
 			}
 		}()
 
-		// Take out args
-		// mw as a object will be deallocated by the Rust side
-		mw := &luaMultiValue{ptr: cval.args, lua: l}
-		args := mw.take()
+		mw := copyAndFreeMultiValueArray(l, cval.args)
 
 		callbackVm := &Lua{object: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
-		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
+		//defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
 		cbLua := &CallbackLua{
 			mainstate: l,          // The main Lua VM that owns this callback
 			cbstate:   callbackVm, // The callback Lua VM that is used to execute the callback
 		}
 
-		values, err := callback(cbLua, args)
+		values, err := callback(cbLua, mw)
 
 		if err != nil {
 			errv := moveStringToRust(err.Error())
@@ -552,14 +549,14 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 			return
 		}
 
-		outMw, err := l.multiValueFromValues(values)
+		outmw, err := createMultiValue(values)
 		if err != nil {
 			errv := moveStringToRust(err.Error())
 			cval.error = errv // Rust side will deallocate it for us
 			return
 		}
 
-		cval.values = outMw.ptr // Rust will deallocate values as well
+		cval.values = outmw
 	}, func() {
 		fmt.Println("function callback is being dropped")
 	})
@@ -569,8 +566,11 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 		err := moveErrorToGo(res.error)
 		return nil, err
 	}
-
-	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
+	fn, ok := castValue(l, res.value).(*LuaFunction)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaFunction from function creation, got %T", fn)
+	}
+	return fn, nil
 }
 
 // CreateThread creates a new thread from a LuaFunction
@@ -594,19 +594,18 @@ func (l *Lua) CreateThread(fn *LuaFunction) (*LuaThread, error) {
 		return nil, err
 	}
 
-	fn.object.RLock()
-	defer fn.object.RUnlock()
-	fnPtr, err := fn.innerPtr()
-	if err != nil {
-		return nil, err // Return error if the function is closed
-	}
-
-	res := C.luago_create_thread(lua, fnPtr)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return nil, err
-	}
-	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(res.value)), threadTab), lua: l}, nil
+	return withBaseRef(fn.BaseRef, func(ptr C.struct_GoLuaValueV2) (*LuaThread, error) {
+		res := C.luago_create_thread(lua, ptr)
+		if res.error != nil {
+			err := moveErrorToGo(res.error)
+			return nil, err
+		}
+		th, ok := castValue(l, res.value).(*LuaThread)
+		if !ok {
+			return nil, fmt.Errorf("expected LuaThread from create thread, got %T", th)
+		}
+		return th, nil
+	})
 }
 
 // CreateBuffer creates a LuaBuffer from a byte slice.
@@ -625,14 +624,22 @@ func (l *Lua) CreateBuffer(s []byte) (*LuaBuffer, error) {
 		if res.error != nil {
 			return nil, moveErrorToGo(res.error)
 		}
-		return &LuaBuffer{object: newObject((*C.void)(unsafe.Pointer(res.value)), bufferTab), lua: l}, nil
+		buf, ok := castValue(l, res.value).(*LuaBuffer)
+		if !ok {
+			return nil, fmt.Errorf("expected LuaBuffer from create buffer, got %T", buf)
+		}
+		return buf, nil
 	}
 
 	res := C.luago_create_buffer(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	if res.error != nil {
 		return nil, moveErrorToGo(res.error)
 	}
-	return &LuaBuffer{object: newObject((*C.void)(unsafe.Pointer(res.value)), bufferTab), lua: l}, nil
+	buf, ok := castValue(l, res.value).(*LuaBuffer)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaBuffer from create buffer, got %T", buf)
+	}
+	return buf, nil
 }
 
 // LoadChunk loads a Lua chunk from the given options.
@@ -645,17 +652,14 @@ func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 		return nil, err
 	}
 
-	var env *C.struct_LuaTable
+	var env = nullCValueV2()
 	if opts.Env != nil {
 		if opts.Env.lua != l {
 			return nil, fmt.Errorf("cannot set environment table from different Lua instance")
 		}
-
-		defer opts.Env.object.RUnlock()
-		opts.Env.object.RLock()
-		envPtr, err := opts.Env.object.PointerNoLock()
-		if err == nil {
-			env = (*C.struct_LuaTable)(unsafe.Pointer(envPtr))
+		env, err, _ = valueToC(opts.Env)
+		if err != nil {
+			return nil, err // Return error if the environment table is closed
 		}
 	}
 
@@ -683,7 +687,12 @@ func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 		err := moveErrorToGo(res.error)
 		return nil, err
 	}
-	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
+
+	fn, ok := castValue(l, res.value).(*LuaFunction)
+	if !ok {
+		return nil, fmt.Errorf("expected LuaFunction from load chunk, got %T", fn)
+	}
+	return fn, nil
 }
 
 // CreateUserData creates a LuaUserData with associated data and a metatable.
@@ -703,26 +712,23 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 		return nil, err
 	}
 
-	defer mt.object.RUnlock()
-	mt.object.RLock()
-	mtPtr, err := mt.innerPtr()
-	if err != nil {
-		return nil, err // Return error if the metatable is closed
-	}
-
 	dynData := newDynamicData(associatedData, func() {
 		fmt.Println("dynamic data is being dropped")
 	})
 	cDynData := dynData.ToC()
-	res := C.luago_create_userdata(lua, cDynData, mtPtr)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return nil, err
-	}
-	return &LuaUserData{
-		lua:    l,
-		object: newObject((*C.void)(unsafe.Pointer(res.value)), userdataTab),
-	}, nil
+
+	return withBaseRef(mt.BaseRef, func(ptr C.struct_GoLuaValueV2) (*LuaUserData, error) {
+		res := C.luago_create_userdata(lua, cDynData, ptr)
+		if res.error != nil {
+			err := moveErrorToGo(res.error)
+			return nil, err
+		}
+		ud, ok := castValue(l, res.value).(*LuaUserData)
+		if !ok {
+			return nil, fmt.Errorf("expected LuaUserData from userdata creation, got %T", ud)
+		}
+		return ud, nil
+	})
 }
 
 func (l *Lua) Close() error {
@@ -750,9 +756,18 @@ const (
 	StdLibAll       StdLib = 1 << 31 // All standard libraries
 )
 
-// CreateLuaVm creates a new Lua VM with the entire standard library enabled.
+// CreateLuaVm creates a new Lua VM with the entire standard library enabled
+// and some default compiler options set.
 func CreateLuaVm() (*Lua, error) {
-	return CreateLuaVmComplex(StdLibAll)
+	vm, err := CreateLuaVmComplex(StdLibAll)
+	if err != nil {
+		return nil, err
+	}
+	// Set default compiler options
+	vm.SetCompilerOpts(CompilerOpts{
+		OptimizationLevel: OptimizationLevelFull,
+	})
+	return vm, nil
 }
 
 // CreateLuaVmComplex creates a new Lua VM with the specified standard libraries enabled.
@@ -808,11 +823,11 @@ func (c *CallbackLua) CurrentThread() *LuaThread {
 	}
 
 	thread := C.luago_current_thread(lua)
-	if thread == nil {
-		return nil // Return nil if the callback thread is not available
+	th, ok := castValue(c.mainstate, thread).(*LuaThread)
+	if !ok {
+		return nil
 	}
-
-	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(thread)), threadTab), lua: c.mainstate}
+	return th
 }
 
 // Sets the arguments to yield the thread with.
@@ -820,7 +835,7 @@ func (c *CallbackLua) CurrentThread() *LuaThread {
 // Notes:
 // - the yield will only occur after return.
 // - the arguments returned will be ignored internally (as such, you should just return a empty value list after calling this method).
-func (c *CallbackLua) YieldWith(args []Value) error {
+func (c *CallbackLua) YieldWith(args []any) error {
 	if c == nil || c.cbstate == nil {
 		return fmt.Errorf("callback Lua VM is closed")
 	}
@@ -833,12 +848,12 @@ func (c *CallbackLua) YieldWith(args []Value) error {
 		return err // Return error if the callback Lua VM is closed
 	}
 
-	mw, err := c.cbstate.multiValueFromValues(args)
+	outmw, err := createMultiValue(args)
 	if err != nil {
 		return err // Return error if the values cannot be converted (diff lua state, closed object, etc)
 	}
 
-	res := C.luago_yield_with(lua, mw.ptr)
+	res := C.luago_yield_with(lua, outmw)
 	if res.error != nil {
 		return moveErrorToGo(res.error) // Return error if the yield failed
 	}

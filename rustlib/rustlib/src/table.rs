@@ -1,56 +1,59 @@
 use std::ffi::{c_char, c_void, CString};
 
-use crate::{result::{wrap_failable, GoBoolResult, GoI64Result, GoNoneResult, GoTableResult, GoValueResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper};
+use crate::{IGoCallback, IGoCallbackWrapper, result::{GoBoolResult, GoI64Result, GoNoneResult, GoValueV2Result, wrap_failable}, value_v2::GoLuaValueV2};
+
+pub fn get_table(lua: &mluau::Lua, t: GoLuaValueV2) -> Option<mluau::Table> {
+    let v = t.to_value(lua);
+    match v {
+        mluau::Value::Table(b) => Some(b),
+        _ => None,
+    }
+}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_table(ptr: *mut mluau::Lua) -> GoTableResult  {
+pub extern "C" fn luago_create_table(lua: *mut mluau::Lua) -> GoValueV2Result  {
     wrap_failable(|| {
         // Safety: Assume ptr is a valid, non-null pointer to a Lua
-        if ptr.is_null() {
-            return GoTableResult::err("Lua pointer is null".to_string());
+        if lua.is_null() {
+            return GoValueV2Result::err("Lua pointer is null".to_string());
         }
 
-        let res = unsafe {
-            let lua = &*ptr;
-            lua.create_table()
-        };
+        let lua = unsafe { &*lua };
+        let res = lua.create_table();
 
         match res {
-            Ok(r) => GoTableResult::ok(Box::into_raw(Box::new(r))),
-            Err(err) => GoTableResult::err(format!("{err}")),
+            Ok(r) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::Table(r))),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_table_with_capacity(ptr: *mut mluau::Lua, narr: usize, nrec: usize) -> GoTableResult  {
+pub extern "C" fn luago_create_table_with_capacity(lua: *mut mluau::Lua, narr: usize, nrec: usize) -> GoValueV2Result {
     wrap_failable(|| {
         // Safety: Assume ptr is a valid, non-null pointer to a Lua
-        if ptr.is_null() {
-            return GoTableResult::err("Lua pointer is null".to_string());
+        if lua.is_null() {
+            return GoValueV2Result::err("Lua pointer is null".to_string());
         }
 
-        let res = unsafe {
-            let lua = &*ptr;
-            lua.create_table_with_capacity(narr, nrec)
-        };
+        let lua = unsafe { &*lua };
+        let res = lua.create_table_with_capacity(narr, nrec);
 
         match res {
-            Ok(r) => GoTableResult::ok(Box::into_raw(Box::new(r))),
-            Err(err) => GoTableResult::err(format!("{err}")),
+            Ok(r) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::Table(r))),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_clear(tab: *mut mluau::Table) -> GoNoneResult {
+pub extern "C" fn luago_table_clear(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> GoNoneResult {
     wrap_failable(|| {
         // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoNoneResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
+        };
 
         let res = tab.clear();
 
@@ -62,15 +65,14 @@ pub extern "C" fn luago_table_clear(tab: *mut mluau::Table) -> GoNoneResult {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_contains_key(tab: *mut mluau::Table, value: GoLuaValue) -> GoBoolResult {
+pub extern "C" fn luago_table_contains_key(lua: *mut mluau::Lua, tab: GoLuaValueV2, value: GoLuaValueV2) -> GoBoolResult {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoBoolResult::err("Table pointer is null".to_string());
-        }
+        };
 
-        let tab = unsafe { &*tab };
-        let value = value.to_value_from_owned();
+        let value = value.to_value(lua);
 
         let res = tab.contains_key(value);
 
@@ -81,61 +83,41 @@ pub extern "C" fn luago_table_contains_key(tab: *mut mluau::Table, value: GoLuaV
     })
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_equals(tab: *mut mluau::Table, tab2: *mut mluau::Table) -> GoBoolResult {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() || tab2.is_null() {
-            return GoBoolResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        let tab2 = unsafe { &*tab2 };
-
-        let res = tab.equals(tab2);
-
-        match res {
-            Ok(r) => GoBoolResult::ok(r),
-            Err(err) => GoBoolResult::err(format!("{err}")),
-        }
-    })
-}
-
 #[repr(C)]
 pub struct TableForEachCallbackData {
-    pub key: GoLuaValue,
-    pub value: GoLuaValue,
+    pub key: GoLuaValueV2,
+    pub value: GoLuaValueV2,
 
     // Go code may modify the below
     pub stop: bool,
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_foreach(tab: *mut mluau::Table, cb: IGoCallback) -> GoNoneResult {
+pub extern "C" fn luago_table_foreach(lua: *mut mluau::Lua, tab: GoLuaValueV2, cb: IGoCallback) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoNoneResult::err("Table pointer is null".to_string());
-        }
+        };
 
-        let tab = unsafe { &*tab };
         let cb_wrapper = IGoCallbackWrapper::new(cb);
 
         let mut stopped = false;
         let res = tab.for_each(|key: mluau::Value, value: mluau::Value| {
-            let data = TableForEachCallbackData {
-                key: GoLuaValue::from_owned(key),
-                value: GoLuaValue::from_owned(value),
+            let Some(lua) = tab.weak_lua().try_upgrade() else {
+                return Err(mluau::Error::external("Table has no associated Lua state"));
+            };
+            let mut data = TableForEachCallbackData {
+                key: GoLuaValueV2::from_value(&lua, key),
+                value: GoLuaValueV2::from_value(&lua, value),
                 stop: false,
             };
 
-            let ptr = Box::into_raw(Box::new(data));
-            cb_wrapper.callback(ptr as *mut c_void);
-            let data = unsafe { Box::from_raw(ptr) };
+            cb_wrapper.callback(&mut data as *const TableForEachCallbackData as *mut c_void);
 
             if data.stop {
                 // Use a dummy error variant to stop the iteration
-                stopped = true;
+                stopped = true; 
                 return Err(mluau::Error::external(""));
             }
 
@@ -156,32 +138,31 @@ pub extern "C" fn luago_table_foreach(tab: *mut mluau::Table, cb: IGoCallback) -
 
 #[repr(C)]
 pub struct TableForEachValueCallbackData {
-    pub value: GoLuaValue,
+    pub value: GoLuaValueV2,
 
     // Go code may modify the below
     pub stop: bool,
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_foreach_value(tab: *mut mluau::Table, cb: IGoCallback) -> GoNoneResult {
+pub extern "C" fn luago_table_foreach_value(lua: *mut mluau::Lua, tab: GoLuaValueV2, cb: IGoCallback) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoNoneResult::err("Table pointer is null".to_string());
-        }
+        };
 
-        let tab = unsafe { &*tab };
         let cb_wrapper = IGoCallbackWrapper::new(cb);
 
         let res = tab.for_each_value(|value: mluau::Value| {
-            let data = TableForEachValueCallbackData {
-                value: GoLuaValue::from_owned(value),
+            let Some(lua) = tab.weak_lua().try_upgrade() else {
+                return Err(mluau::Error::external("Table has no associated Lua state"));
+            };
+            let mut data = TableForEachValueCallbackData {
+                value: GoLuaValueV2::from_value(&lua, value),
                 stop: false,
             };
-            // TODO: Avoid the pointer allocation if possible
-            let ptr = Box::into_raw(Box::new(data));
-            cb_wrapper.callback(ptr as *mut c_void);
-            let data = unsafe { Box::from_raw(ptr) };
+            cb_wrapper.callback(&mut data as *const TableForEachValueCallbackData as *mut c_void);
 
             if data.stop {
                 // Use a dummy error variant to stop the iteration
@@ -199,59 +180,52 @@ pub extern "C" fn luago_table_foreach_value(tab: *mut mluau::Table, cb: IGoCallb
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_get(tab: *mut mluau::Table, key: GoLuaValue) -> GoValueResult {
+pub extern "C" fn luago_table_get(lua: *mut mluau::Lua, tab: GoLuaValueV2, key: GoLuaValueV2) -> GoValueV2Result {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoValueResult::err("Table pointer is null".to_string());
-        }
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoValueV2Result::err("Table pointer is null".to_string());
+        };
 
-        let tab = unsafe { &*tab };
-        let key = key.to_value_from_owned();
+        let key = key.to_value(lua);
         let res = tab.get::<mluau::Value>(key);
         
         match res {
-            Ok(r) => GoValueResult::ok(GoLuaValue::from_owned(r)),
-            Err(err) => GoValueResult::err(format!("{err}")),
+            Ok(r) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, r)),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_is_empty(tab: *mut mluau::Table) -> bool {
+pub extern "C" fn luago_table_is_empty(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> bool {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return true; // If the table pointer is null, consider it empty
-        }
-
-        let tab = unsafe { &*tab };
+        };
         tab.is_empty()
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_is_readonly(tab: *mut mluau::Table) -> bool {
+pub extern "C" fn luago_table_is_readonly(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> bool {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return true; // If the table pointer is null, consider it readonly
-        }
-
-        let tab = unsafe { &*tab };
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return false; // If the table pointer is null, consider it not readonly
+        };
         tab.is_readonly()
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_len(tab: *mut mluau::Table) -> GoI64Result {
+pub extern "C" fn luago_table_len(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> GoI64Result {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoI64Result::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
+        };
         match tab.len() {
             Ok(len) => GoI64Result::ok(len),
             Err(err) => GoI64Result::err(format!("{err}")),
@@ -260,47 +234,43 @@ pub extern "C" fn luago_table_len(tab: *mut mluau::Table) -> GoI64Result {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_metatable(tab: *mut mluau::Table) -> *mut mluau::Table {
+pub extern "C" fn luago_table_metatable(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> GoLuaValueV2 {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return std::ptr::null_mut(); // If the table pointer is null, return null
-        }
-
-        let tab = unsafe { &*tab };
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoLuaValueV2::empty();
+        };
         match tab.metatable() {
-            Some(mt) => Box::into_raw(Box::new(mt)),
-            None => std::ptr::null_mut(), // If no metatable, return null
+            Some(mt) => GoLuaValueV2::from_value(lua, mluau::Value::Table(mt)),
+            None => GoLuaValueV2::empty()
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_pop(tab: *mut mluau::Table) -> GoValueResult {
+pub extern "C" fn luago_table_pop(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> GoValueV2Result {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoValueResult::err("Table pointer is null".to_string());
-        }
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoValueV2Result::err("Table pointer is null".to_string());
+        };
 
-        let tab = unsafe { &*tab };
         match tab.pop::<mluau::Value>() {
-            Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
-            Err(err) => GoValueResult::err(format!("{err}")),
+            Ok(v) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, v)),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_push(tab: *mut mluau::Table, value: GoLuaValue) -> GoNoneResult {
+pub extern "C" fn luago_table_push(lua: *mut mluau::Lua, tab: GoLuaValueV2, value: GoLuaValueV2) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoNoneResult::err("Table pointer is null".to_string());
-        }
+        };
 
-        let tab = unsafe { &*tab };
-        match tab.push(value.to_value_from_owned()) {
+        match tab.push(value.to_value(lua)) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }
@@ -308,31 +278,31 @@ pub extern "C" fn luago_table_push(tab: *mut mluau::Table, value: GoLuaValue) ->
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_get(tab: *mut mluau::Table, key: GoLuaValue) -> GoValueResult {
+pub extern "C" fn luago_table_raw_get(lua: *mut mluau::Lua, tab: GoLuaValueV2, key: GoLuaValueV2) -> GoValueV2Result {
     wrap_failable(|| {
+        let lua = unsafe { &*lua };
         // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoValueResult::err("Table pointer is null".to_string());
-        }
+        let Some(tab) = get_table(lua, tab) else {
+            return GoValueV2Result::err("Table pointer is null".to_string());
+        };
 
-        let tab = unsafe { &*tab };
-        match tab.raw_get::<mluau::Value>(key.to_value_from_owned()) {
-            Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
-            Err(err) => GoValueResult::err(format!("{err}")),
+        match tab.raw_get::<mluau::Value>(key.to_value(lua)) {
+            Ok(v) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, v)),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_insert(tab: *mut mluau::Table, idx: i64, value: GoLuaValue) -> GoNoneResult {
+pub extern "C" fn luago_table_raw_insert(lua: *mut mluau::Lua, tab: GoLuaValueV2, idx: i64, value: GoLuaValueV2) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
             return GoNoneResult::err("Table pointer is null".to_string());
-        }
+        };
 
-        let tab = unsafe { &*tab };
-        match tab.raw_insert(idx, value.to_value_from_owned()) {
+        // .to_value(lua) clones the handle, so it's safe to pass to Lua
+        match tab.raw_insert(idx, value.to_value(lua)) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }
@@ -340,117 +310,40 @@ pub extern "C" fn luago_table_raw_insert(tab: *mut mluau::Table, idx: i64, value
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_len(tab: *mut mluau::Table) -> usize {
+pub extern "C" fn luago_table_raw_len(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> usize {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return 0; // If the table pointer is null, return 0
-        }
-
-        let tab = unsafe { &*tab };
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return 0; 
+        };
         tab.raw_len()
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_pop(tab: *mut mluau::Table) -> GoValueResult {
+pub extern "C" fn luago_table_raw_pop(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> GoValueV2Result {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoValueResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        match tab.raw_pop::<mluau::Value>() {
-            Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
-            Err(err) => GoValueResult::err(format!("{err}")),
-        }
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_push(tab: *mut mluau::Table, value: GoLuaValue) -> GoNoneResult {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoNoneResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        match tab.raw_push(value.to_value_from_owned()) {
-            Ok(_) => GoNoneResult::ok(),
-            Err(err) => GoNoneResult::err(format!("{err}")),
-        }
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_remove(tab: *mut mluau::Table, key: GoLuaValue) -> GoNoneResult {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoNoneResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        match tab.raw_remove(key.to_value_from_owned()) {
-            Ok(_) => GoNoneResult::ok(),
-            Err(err) => GoNoneResult::err(format!("{err}")),
-        }
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_raw_set(tab: *mut mluau::Table, key: GoLuaValue, value: GoLuaValue) -> GoNoneResult {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoNoneResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        match tab.raw_set(key.to_value_from_owned(), value.to_value_from_owned()) {
-            Ok(_) => GoNoneResult::ok(),
-            Err(err) => GoNoneResult::err(format!("{err}")),
-        }
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_set(tab: *mut mluau::Table, key: GoLuaValue, value: GoLuaValue) -> GoNoneResult {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoNoneResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        match tab.set(key.to_value_from_owned(), value.to_value_from_owned()) {
-            Ok(_) => GoNoneResult::ok(),
-            Err(err) => GoNoneResult::err(format!("{err}")),
-        }
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_set_metatable(tab: *mut mluau::Table, metatable: *mut mluau::Table) -> GoNoneResult {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return GoNoneResult::err("Table pointer is null".to_string());
-        }
-
-        let tab = unsafe { &*tab };
-        let metatable = if metatable.is_null() {
-            None
-        } else {
-            // Safety: Assume metatable is a valid, non-null pointer to a Lua Table
-            // in the case it is not null
-            let mt_ref = unsafe { &*metatable };
-            Some(mt_ref.clone())
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoValueV2Result::err("Table pointer is null".to_string());
         };
 
-        match tab.set_metatable(metatable) {
+        match tab.raw_pop::<mluau::Value>() {
+            Ok(v) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, v)),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_table_raw_push(lua: *mut mluau::Lua, tab: GoLuaValueV2, value: GoLuaValueV2) -> GoNoneResult {
+    wrap_failable(|| {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoNoneResult::err("Table pointer is null".to_string());
+        };
+
+        match tab.raw_push(value.to_value(lua)) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }
@@ -458,73 +351,106 @@ pub extern "C" fn luago_table_set_metatable(tab: *mut mluau::Table, metatable: *
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_set_readonly(tab: *mut mluau::Table, enabled: bool) {
+pub extern "C" fn luago_table_raw_remove(lua: *mut mluau::Lua, tab: GoLuaValueV2, key: GoLuaValueV2) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return; // If the table pointer is null, do nothing
-        }
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoNoneResult::err("Table pointer is null".to_string());
+        };
 
-        let tab = unsafe { &*tab };
+        match tab.raw_remove(key.to_value(lua)) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_table_raw_set(lua: *mut mluau::Lua, tab: GoLuaValueV2, key: GoLuaValueV2, value: GoLuaValueV2) -> GoNoneResult {
+    wrap_failable(|| {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoNoneResult::err("Table pointer is null".to_string());
+        };
+
+        match tab.raw_set(key.to_value(lua), value.to_value(lua)) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_table_set(lua: *mut mluau::Lua, tab: GoLuaValueV2, key: GoLuaValueV2, value: GoLuaValueV2) -> GoNoneResult {
+    wrap_failable(|| {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoNoneResult::err("Table pointer is null".to_string());
+        };
+
+        match tab.set(key.to_value(lua), value.to_value(lua)) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_table_set_metatable(lua: *mut mluau::Lua, tab: GoLuaValueV2, metatable: GoLuaValueV2) -> GoNoneResult {
+    wrap_failable(|| {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return GoNoneResult::err("Table pointer is null".to_string());
+        };
+
+        // Convert V2 to mluau::Value, then check if it is a Table
+        let mt_val = metatable.to_value(lua);
+        let mt_option = match mt_val {
+            mluau::Value::Table(t) => Some(t),
+            mluau::Value::Nil => None,
+            _ => return GoNoneResult::err("Metatable must be a table or nil".to_string()),
+        };
+
+        match tab.set_metatable(mt_option) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_table_set_readonly(lua: *mut mluau::Lua, tab: GoLuaValueV2, enabled: bool) {
+    wrap_failable(|| {
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return; 
+        };
         tab.set_readonly(enabled);
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_set_safeenv(tab: *mut mluau::Table, enabled: bool) {
+pub extern "C" fn luago_table_set_safeenv(lua: *mut mluau::Lua, tab: GoLuaValueV2, enabled: bool) {
     wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return; // If the table pointer is null, do nothing
-        }
-
-        let tab = unsafe { &*tab };
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return; 
+        };
         tab.set_safeenv(enabled);
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_table_to_pointer(tab: *mut mluau::Table) -> usize {
+pub extern "C" fn luago_table_debug(lua: *mut mluau::Lua, tab: GoLuaValueV2) -> *mut c_char {
     wrap_failable(|| {
-        // Safety: Assume tab is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return 0;
-        }
+        let lua = unsafe { &*lua };
+        let Some(tab) = get_table(lua, tab) else {
+            return std::ptr::null_mut(); 
+        };
 
-        let lua_table = unsafe { &*tab };
-
-        let ptr = lua_table.to_pointer();
-
-        ptr as usize
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_table_debug(tab: *mut mluau::Table) -> *mut c_char {
-    wrap_failable(|| {
-        // Safety: Assume tab is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return std::ptr::null_mut(); // If the table pointer is null, return null
-        }
-
-        let lua_table = unsafe { &*tab };
-
-        // luago_result_error_free compatible
-        let debug = format!("{lua_table:#?}");
+        // luago_result_error_free compatible string creation
+        let debug = format!("{tab:#?}");
         let error_cstr = CString::new(debug).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
         CString::into_raw(error_cstr) as *mut c_char
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_free_table(tab: *mut mluau::Table) {
-    wrap_failable(|| {
-        // Safety: Assume table is a valid, non-null pointer to a Lua Table
-        if tab.is_null() {
-            return;
-        }
-
-        // Re-box the Lua Table pointer to manage its memory automatically.
-        unsafe { drop(Box::from_raw(tab)) };
     })
 }

@@ -7,282 +7,179 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"unsafe"
 )
 
-var tableTab = objectTab{
-	dtor: func(ptr *C.void) {
-		C.luago_free_table((*C.struct_LuaTable)(unsafe.Pointer(ptr)))
-	},
-}
-
 // A LuaTable is an abstraction over a Lua table object.
 type LuaTable struct {
-	lua    *Lua // The Lua VM wrapper that owns this table
-	object *object
-}
-
-func (l *LuaTable) innerPtr() (*C.struct_LuaTable, error) {
-	ptr, err := l.object.PointerNoLock()
-	if err != nil {
-		return nil, err // Return error if the object is closed
-	}
-	return (*C.struct_LuaTable)(unsafe.Pointer(ptr)), nil
+	*BaseRef
 }
 
 // Clear the LuaTable
 func (l *LuaTable) Clear() error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot clear table on closed Lua VM")
-	}
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		res := C.luago_table_clear(l.lua.ptr(), ptr)
+		if res.error != nil {
+			err := moveErrorToGo(res.error)
+			return err
+		}
 
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-
-	res := C.luago_table_clear(ptr)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // ContainsKey checks if the LuaTable contains a key
-func (l *LuaTable) ContainsKey(key Value) (bool, error) {
-	if l.lua.object.IsClosed() {
-		return false, fmt.Errorf("cannot check key in table on closed Lua VM")
-	}
-	l.object.RLock()
-	defer l.object.RUnlock()
+func (l *LuaTable) ContainsKey(key any) (bool, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (bool, error) {
+		keyVal, err, _ := valueToC(key)
+		if err != nil {
+			return false, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
+		}
+		res := C.luago_table_contains_key(l.lua.ptr(), ptr, keyVal)
 
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return false, err // Return error if the object is closed
-	}
-	keyVal, err := l.lua.valueToC(key)
-	if err != nil {
-		return false, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-
-	res := C.luago_table_contains_key(ptr, keyVal)
-	if res.error != nil {
-		return false, moveErrorToGo(res.error)
-	}
-	return bool(res.value), nil
+		// ensure key is not GC'd before the call
+		//
+		// This is critical as key may contain a finalizer that may clean the keyVal prior to contains_key
+		// finishing causing use-after-free in Rust
+		runtime.KeepAlive(key)
+		if res.error != nil {
+			return false, moveErrorToGo(res.error)
+		}
+		return bool(res.value), nil
+	})
 }
 
-// Equals checks if the LuaTable equals another LuaTable
-//
-// The two tables are first compared by reference. Otherwise,
-// the __eq metamethod may be called to compare the two tables.
-func (l *LuaTable) Equals(other *LuaTable) (bool, error) {
-	if l.lua.object.IsClosed() {
-		return false, fmt.Errorf("cannot compare LuaTable on closed Lua VM")
-	}
-
-	if other == nil {
-		return false, nil
-	}
-
-	if l.lua != other.lua {
-		return false, fmt.Errorf("cannot compare LuaTable from different Lua instances")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return false, err // Return error if the object is closed
-	}
-	ptr2, err := other.innerPtr()
-	if err != nil {
-		return false, err // Return error if the other object is closed
-	}
-
-	res := C.luago_table_equals(ptr, ptr2)
-	if res.error != nil {
-		return false, moveErrorToGo(res.error)
-	}
-	return bool(res.value), nil
-}
-
-type TableForEachFn = func(key, value Value) error
+type TableForEachFn = func(key, value any) error
 
 // ForEach iterates over the LuaTable and calls the provided function for each key-value pair.
 //
 // Deadlock note: the LuaTable should not be closed while inside a ForEach loop.
 // Note 2: the returned error variant should not be closed
 func (l *LuaTable) ForEach(fn TableForEachFn) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot iterate over table on closed Lua VM")
-	}
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		var errv error
+		cbWrapper := newGoCallback(func(val unsafe.Pointer) {
+			cval := (*C.struct_TableForEachCallbackData)(val)
 
-	l.object.RLock()
-	defer l.object.RUnlock()
+			// Safety: it is undefined behavior for the callback to unwind into
+			// Rust (or even C!) frames from Go, so we must recover() any panic
+			// that occurs in the callback to prevent a crash.
+			defer func() {
+				if r := recover(); r != nil {
+					errv = fmt.Errorf("panic in ForEach callback: %v", r)
+					cval.stop = C.bool(true) // Stop the iteration
+				}
+			}()
 
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
+			key := castValue(l.lua, cval.key)
+			value := castValue(l.lua, cval.value)
 
-	var errv error
-	cbWrapper := newGoCallback(func(val unsafe.Pointer) {
-		cval := (*C.struct_TableForEachCallbackData)(val)
-		key := l.lua.valueFromC(cval.key)
-		value := l.lua.valueFromC(cval.value)
-
-		// Safety: it is undefined behavior for the callback to unwind into
-		// Rust (or even C!) frames from Go, so we must recover() any panic
-		// that occurs in the callback to prevent a crash.
-		defer func() {
-			if r := recover(); r != nil {
-				errv = fmt.Errorf("panic in ForEach callback: %v", r)
+			err := fn(key, value)
+			if err != nil {
+				errv = err               // Capture the error to return it later
 				cval.stop = C.bool(true) // Stop the iteration
 			}
-		}()
+		}, func() {
+			fmt.Println("foreach callback is being dropped")
+		})
 
-		err := fn(key, value)
-		if err != nil {
-			errv = err               // Capture the error to return it later
-			cval.stop = C.bool(true) // Stop the iteration
+		res := C.luago_table_foreach(l.lua.ptr(), ptr, cbWrapper.ToC())
+		if res.error != nil {
+			err := moveErrorToGo(res.error)
+			return err
 		}
-	}, func() {
-		fmt.Println("foreach callback is being dropped")
+
+		return errv
 	})
-
-	res := C.luago_table_foreach(ptr, cbWrapper.ToC())
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-
-	return errv
 }
 
-type TableForEachValueFn = func(value Value) error
+type TableForEachValueFn = func(value any) error
 
 // ForEachValue iterates over sequence part of the LuaTable and calls the provided function for each key-value pair.
 //
 // Deadlock note: the LuaTable should not be closed while inside a ForEach loop.
 // Note 2: the returned error variant should not be closed
 func (l *LuaTable) ForEachValue(fn TableForEachValueFn) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot iterate over table on closed Lua VM")
-	}
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		var errv error
+		cbWrapper := newGoCallback(func(val unsafe.Pointer) {
+			cval := (*C.struct_TableForEachValueCallbackData)(val)
 
-	l.object.RLock()
-	defer l.object.RUnlock()
+			// Safety: it is undefined behavior for the callback to unwind into
+			// Rust (or even C!) frames from Go, so we must recover() any panic
+			// that occurs in the callback to prevent a crash.
+			defer func() {
+				if r := recover(); r != nil {
+					errv = fmt.Errorf("panic in ForEachValue callback: %v", r)
+					cval.stop = C.bool(true) // Stop the iteration
+				}
+			}()
 
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
+			value := castValue(l.lua, cval.value)
 
-	var errv error
-	cbWrapper := newGoCallback(func(val unsafe.Pointer) {
-		cval := (*C.struct_TableForEachValueCallbackData)(val)
-		value := l.lua.valueFromC(cval.value)
-
-		// Safety: it is undefined behavior for the callback to unwind into
-		// Rust (or even C!) frames from Go, so we must recover() any panic
-		// that occurs in the callback to prevent a crash.
-		defer func() {
-			if r := recover(); r != nil {
-				errv = fmt.Errorf("panic in ForEachValue callback: %v", r)
+			err := fn(value)
+			if err != nil {
+				errv = err               // Capture the error to return it later
 				cval.stop = C.bool(true) // Stop the iteration
 			}
-		}()
+		}, func() {
+			fmt.Println("foreachvalue callback is being dropped")
+		})
 
-		err := fn(value)
-		if err != nil {
-			errv = err               // Capture the error to return it later
-			cval.stop = C.bool(true) // Stop the iteration
+		res := C.luago_table_foreach_value(l.lua.ptr(), ptr, cbWrapper.ToC())
+		if res.error != nil {
+			errStr := moveStringToGo(res.error)
+			if errStr != "stop" {
+				return errors.New(errStr)
+			}
 		}
-	}, func() {
-		fmt.Println("foreachvalue callback is being dropped")
+
+		return errv
 	})
-
-	res := C.luago_table_foreach_value(ptr, cbWrapper.ToC())
-	if res.error != nil {
-		errStr := moveStringToGo(res.error)
-		if errStr != "stop" {
-			return errors.New(errStr)
-		}
-	}
-
-	return errv
 }
 
 // Get returns the value associated with the key in the LuaTable.
 //
 // If the key does not exist, it returns LuaValue of nil
-func (l *LuaTable) Get(key Value) (Value, error) {
-	if l.lua.object.IsClosed() {
-		return &ValueNil{}, fmt.Errorf("cannot get key from table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return &ValueNil{}, err // Return error if the object is closed
-	}
-	keyVal, err := l.lua.valueToC(key)
-	if err != nil {
-		return &ValueNil{}, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-
-	res := C.luago_table_get(ptr, keyVal)
-	if res.error != nil {
-		return &ValueNil{}, moveErrorToGo(res.error)
-	}
-	return l.lua.valueFromC(res.value), nil
+func (l *LuaTable) Get(key any) (any, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (any, error) {
+		keyVal, err, _ := valueToC(key)
+		if err != nil {
+			return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
+		}
+		res := C.luago_table_get(l.lua.ptr(), ptr, keyVal)
+		// ensure key is not GC'd before the call
+		//
+		// This is critical as key may contain a finalizer that may clean the keyVal prior to get
+		runtime.KeepAlive(key)
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return castValue(l.lua, res.value), nil
+	})
 }
 
 // IsEmpty returns if the LuaTable is empty
 //
-// This method does not invoke any metamethods
+// This method does not invoke any metamethods but may error if the table
+// is closed
 func (l *LuaTable) IsEmpty() bool {
-	if l.lua.object.IsClosed() {
-		return true // A closed table is considered empty
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return true // A closed table is considered empty
-	}
-
-	res := C.luago_table_is_empty(ptr)
-	return bool(res)
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) bool {
+		res := C.luago_table_is_empty(l.lua.ptr(), ptr)
+		return bool(res)
+	})
 }
 
-// IsReadonly returns if the LuaTable is marked as readonly (Luau only)
-func (l *LuaTable) IsReadonly() bool {
-	if l.lua.object.IsClosed() {
-		return true // A closed table is considered readonly
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return true // A closed table is considered readonly
-	}
-
-	res := C.luago_table_is_readonly(ptr)
-	return bool(res)
+// IsReadonly returns if the LuaTable is marked as readonly
+//
+// This method does not invoke any metamethods but may error if the table
+// is closed
+func (l *LuaTable) IsReadonly() (bool, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (bool, error) {
+		res := C.luago_table_is_readonly(l.lua.ptr(), ptr)
+		return bool(res), nil
+	})
 }
 
 // Len returns the length of the LuaTable
@@ -295,23 +192,13 @@ func (l *LuaTable) IsReadonly() bool {
 //
 // To avoid invoking the __len metamethod, use RawLen instead.
 func (l *LuaTable) Len() (int64, error) {
-	if l.lua.object.IsClosed() {
-		return 0, fmt.Errorf("cannot get length of table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return 0, err // Return error if the object is closed
-	}
-
-	res := C.luago_table_len(ptr)
-	if res.error != nil {
-		return 0, moveErrorToGo(res.error)
-	}
-	return int64(res.value), nil
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (int64, error) {
+		res := C.luago_table_len(l.lua.ptr(), ptr)
+		if res.error != nil {
+			return 0, moveErrorToGo(res.error)
+		}
+		return int64(res.value), nil
+	})
 }
 
 // Metatable returns the metatable of the LuaTable.
@@ -319,188 +206,123 @@ func (l *LuaTable) Len() (int64, error) {
 // Returns nil if the table does not have a metatable
 // or is closed.
 func (l *LuaTable) Metatable() *LuaTable {
-	if l.lua.object.IsClosed() {
-		return nil // Return nil if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return nil
-	}
-
-	res := C.luago_table_metatable(ptr)
-	if res == nil {
-		return nil // No metatable or the table is closed
-	}
-
-	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res)), tableTab), lua: l.lua}
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) *LuaTable {
+		res := C.luago_table_metatable(l.lua.ptr(), ptr)
+		casted := castValue(l.lua, res)
+		switch v := casted.(type) {
+		case nil:
+			return nil // No metatable
+		case *LuaTable:
+			return v
+		default:
+			return nil // Should not happen
+		}
+	})
 }
 
 // Pop removes the last element from the LuaTable
 //
 // This might invoke the __len and __newindex metamethods.
-func (l *LuaTable) Pop() (Value, error) {
-	if l.lua.object.IsClosed() {
-		return &ValueNil{}, fmt.Errorf("cannot pop from table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return &ValueNil{}, err // Return error if the object is closed
-	}
-	res := C.luago_table_pop(ptr)
-	if res.error != nil {
-		return &ValueNil{}, moveErrorToGo(res.error)
-	}
-	return l.lua.valueFromC(res.value), nil
+func (l *LuaTable) Pop() (any, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (any, error) {
+		res := C.luago_table_pop(l.lua.ptr(), ptr)
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return castValue(l.lua, res.value), nil
+	})
 }
 
 // Push appends a value to the back of the LuaTable
 //
 // This might invoke the __len and __newindex metamethods.
-func (l *LuaTable) Push(value Value) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot push to table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-	valueVal, err := l.lua.valueToC(value)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	res := C.luago_table_push(ptr, valueVal)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+func (l *LuaTable) Push(value any) error {
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		valueVal, err, _ := valueToC(value)
+		if err != nil {
+			return err
+		}
+		res := C.luago_table_push(l.lua.ptr(), ptr, valueVal)
+		runtime.KeepAlive(value) // ensure value is not GC'd before the call
+		if res.error != nil {
+			return moveErrorToGo(res.error)
+		}
+		return nil
+	})
 }
 
 // Gets the value associated to key without invoking metamethods.
-func (l *LuaTable) RawGet(key Value) (Value, error) {
-	if l.lua.object.IsClosed() {
-		return &ValueNil{}, fmt.Errorf("cannot get key from table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return &ValueNil{}, err // Return error if the object is closed
-	}
-	keyVal, err := l.lua.valueToC(key)
-	if err != nil {
-		return &ValueNil{}, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-
-	res := C.luago_table_raw_get(ptr, keyVal)
-	if res.error != nil {
-		return &ValueNil{}, moveErrorToGo(res.error)
-	}
-	return l.lua.valueFromC(res.value), nil
+func (l *LuaTable) RawGet(key any) (any, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (any, error) {
+		keyVal, err, _ := valueToC(key)
+		if err != nil {
+			return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
+		}
+		res := C.luago_table_raw_get(l.lua.ptr(), ptr, keyVal)
+		// ensure key is not GC'd before the call
+		//
+		// This is critical as key may contain a finalizer that may clean the keyVal prior to get
+		runtime.KeepAlive(key)
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return castValue(l.lua, res.value), nil
+	})
 }
 
 // Inserts element value at position idx to the table, shifting up the elements from table[idx].
 //
 // The worst case complexity is O(n), where n is the table length.
-func (l *LuaTable) RawInsert(idx int64, value Value) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot insert into table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-	valueVal, err := l.lua.valueToC(value)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-
-	res := C.luago_table_raw_insert(ptr, C.int64_t(idx), valueVal)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+func (l *LuaTable) RawInsert(idx int64, value any) error {
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		valueVal, err, _ := valueToC(value)
+		if err != nil {
+			return err
+		}
+		res := C.luago_table_raw_insert(l.lua.ptr(), ptr, C.int64_t(idx), valueVal)
+		runtime.KeepAlive(value) // ensure value is not GC'd before the call
+		if res.error != nil {
+			return moveErrorToGo(res.error)
+		}
+		return nil
+	})
 }
 
 // RawLen returns the result of the Lua # operator, without invoking the __len metamethod.
+//
+// If the table is closed, this function returns 0.
 func (l *LuaTable) RawLen() uint64 {
-	if l.lua.object.IsClosed() {
-		return 0 // Return 0 if the Lua VM is closed
-	}
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return 0 // Return 0 if the object is closed
-	}
-
-	res := C.luago_table_raw_len(ptr)
-	return uint64(res)
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) uint64 {
+		res := C.luago_table_raw_len(l.lua.ptr(), ptr)
+		return uint64(res)
+	})
 }
 
 // RawPop removes the last element from the LuaTable without invoking metamethods.
-func (l *LuaTable) RawPop() (Value, error) {
-	if l.lua.object.IsClosed() {
-		return &ValueNil{}, fmt.Errorf("cannot raw pop from table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return &ValueNil{}, err // Return error if the object is closed
-	}
-	res := C.luago_table_raw_pop(ptr)
-	if res.error != nil {
-		return &ValueNil{}, moveErrorToGo(res.error)
-	}
-	return l.lua.valueFromC(res.value), nil
+func (l *LuaTable) RawPop() (any, error) {
+	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) (any, error) {
+		res := C.luago_table_raw_pop(l.lua.ptr(), ptr)
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return castValue(l.lua, res.value), nil
+	})
 }
 
 // RawPush appends a value to the back of the LuaTable without invoking metamethods.
-func (l *LuaTable) RawPush(value Value) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot raw push to table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-	valueVal, err := l.lua.valueToC(value)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	res := C.luago_table_raw_push(ptr, valueVal)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+func (l *LuaTable) RawPush(value any) error {
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		valueVal, err, _ := valueToC(value)
+		if err != nil {
+			return err
+		}
+		res := C.luago_table_raw_push(l.lua.ptr(), ptr, valueVal)
+		runtime.KeepAlive(value) // ensure value is not GC'd before the call
+		if res.error != nil {
+			return moveErrorToGo(res.error)
+		}
+		return nil
+	})
 }
 
 // RawRemove removes a key from the LuaTable without invoking metamethods.
@@ -509,59 +331,42 @@ func (l *LuaTable) RawPush(value Value) error {
 // and table[key] will be removed with a worst case complexity of O(n),
 //
 // For non-integer keys, this is equivalent to a table[key] = nil operation,
-func (l *LuaTable) RawRemove(key Value) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot raw remove key from table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-	keyVal, err := l.lua.valueToC(key)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	res := C.luago_table_raw_remove(ptr, keyVal)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+func (l *LuaTable) RawRemove(key any) error {
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		keyVal, err, _ := valueToC(key)
+		if err != nil {
+			return err
+		}
+		res := C.luago_table_raw_remove(l.lua.ptr(), ptr, keyVal)
+		runtime.KeepAlive(key) // ensure value is not GC'd before the call
+		if res.error != nil {
+			return moveErrorToGo(res.error)
+		}
+		return nil
+	})
 }
 
 // Sets a key-value pair without invoking metamethods.
 //
 // If value is nil, this effectively removes the key from the table.
-func (l *LuaTable) RawSet(key Value, value Value) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot raw set key in table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-	keyVal, err := l.lua.valueToC(key)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	valueVal, err := l.lua.valueToC(value)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	res := C.luago_table_raw_set(ptr, keyVal, valueVal)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+func (l *LuaTable) RawSet(key any, value any) error {
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		keyVal, err, _ := valueToC(key)
+		if err != nil {
+			return err
+		}
+		valueVal, err, _ := valueToC(value)
+		if err != nil {
+			return err
+		}
+		res := C.luago_table_raw_set(l.lua.ptr(), ptr, keyVal, valueVal)
+		runtime.KeepAlive(key)   // ensure value is not GC'd before the call
+		runtime.KeepAlive(value) // ensure value is not GC'd before the call
+		if res.error != nil {
+			return moveErrorToGo(res.error)
+		}
+		return nil
+	})
 }
 
 // Sets a key-value pair.
@@ -569,74 +374,50 @@ func (l *LuaTable) RawSet(key Value, value Value) error {
 // If value is nil, this effectively removes the key from the table.
 //
 // This might invoke the __newindex metamethod if it exists.
-func (l *LuaTable) Set(key Value, value Value) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot set key in table on closed Lua VM")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-	keyVal, err := l.lua.valueToC(key)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	valueVal, err := l.lua.valueToC(value)
-	if err != nil {
-		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
-	}
-	res := C.luago_table_set(ptr, keyVal, valueVal)
-	if res.error != nil {
-		err := moveErrorToGo(res.error)
-		return err
-	}
-	return nil
+func (l *LuaTable) Set(key any, value any) error {
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		keyVal, err, _ := valueToC(key)
+		if err != nil {
+			return err
+		}
+		valueVal, err, _ := valueToC(value)
+		if err != nil {
+			return err
+		}
+		res := C.luago_table_set(l.lua.ptr(), ptr, keyVal, valueVal)
+		runtime.KeepAlive(key)   // ensure value is not GC'd before the call
+		runtime.KeepAlive(value) // ensure value is not GC'd before the call
+		if res.error != nil {
+			return moveErrorToGo(res.error)
+		}
+		return nil
+	})
 }
 
 // Sets the metatable for the LuaTable.
 //
 // If the metatable is nil, it removes the metatable from the table.
 func (l *LuaTable) SetMetatable(mt *LuaTable) error {
-	if l.lua.object.IsClosed() {
-		return fmt.Errorf("cannot set metatable on closed Lua VM")
-	}
-
-	if mt != nil && mt.lua != l.lua {
-		return fmt.Errorf("cannot set metatable from different Lua instance")
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return err // Return error if the object is closed
-	}
-
-	if mt == nil {
-		// Drop the metatable by passing nil as mt
-		res := C.luago_table_set_metatable(ptr, nil)
-		if res.error != nil {
-			return moveErrorToGo(res.error)
+	return withBaseRefNoRet(l.BaseRef, func(ptr C.struct_GoLuaValueV2) error {
+		if mt == nil {
+			// Drop the metatable by passing nil as mt
+			res := C.luago_table_set_metatable(l.lua.ptr(), ptr, nullCValueV2())
+			if res.error != nil {
+				return moveErrorToGo(res.error)
+			}
+			return nil
+		} else {
+			// Set the metatable
+			return withBaseRefNoRet(mt.BaseRef, func(mt C.struct_GoLuaValueV2) error {
+				res := C.luago_table_set_metatable(l.lua.ptr(), ptr, mt)
+				if res.error != nil {
+					err := moveErrorToGo(res.error)
+					return err
+				}
+				return nil
+			})
 		}
-		return nil
-	} else {
-		// Set the metatable
-		ptr2, err := mt.innerPtr()
-		if err != nil {
-			return err // Return error if the other object is closed
-		}
-		res := C.luago_table_set_metatable(ptr, ptr2)
-		if res.error != nil {
-			err := moveErrorToGo(res.error)
-			return err
-		}
-		return nil
-	}
+	})
 }
 
 // SetReadonly sets whether or not the LuaTable is readonly.
@@ -645,19 +426,10 @@ func (l *LuaTable) SetMetatable(mt *LuaTable) error {
 //
 // If the table is closed, this function does nothing.
 func (l *LuaTable) SetReadonly(enabled bool) {
-	if l.lua.object.IsClosed() {
-		return // No-op if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return // No-op if the object is closed
-	}
-
-	C.luago_table_set_readonly(ptr, C.bool(enabled))
+	withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) bool {
+		C.luago_table_set_readonly(l.lua.ptr(), ptr, C.bool(enabled))
+		return true
+	})
 }
 
 // SetSafeEnv sets whether or not the LuaTable is safeenv.
@@ -672,67 +444,16 @@ func (l *LuaTable) SetReadonly(enabled bool) {
 //
 // If the table is closed, this function does nothing.
 func (l *LuaTable) SetSafeEnv(enabled bool) {
-	if l.lua.object.IsClosed() {
-		return // No-op if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-
-	ptr, err := l.innerPtr()
-	if err != nil {
-		return // No-op if the object is closed
-	}
-
-	C.luago_table_set_safeenv(ptr, C.bool(enabled))
-}
-
-// Returns a 'pointer' to a Lua-owned table
-//
-// This pointer is only useful for hashing/debugging
-// and cannot be converted back to the original Lua table object.
-func (l *LuaTable) Pointer() uint64 {
-	if l.lua.object.IsClosed() {
-		return 0 // Return 0 if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-	lptr, err := l.object.PointerNoLock()
-	if err != nil {
-		return 0 // Return 0 if the object is closed
-	}
-
-	ptr := C.luago_table_to_pointer((*C.struct_LuaTable)(unsafe.Pointer(lptr)))
-	return uint64(ptr)
+	withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) bool {
+		C.luago_table_set_safeenv(l.lua.ptr(), ptr, C.bool(enabled))
+		return true
+	})
 }
 
 // Returns a debug string representation of the LuaTable
 func (l *LuaTable) String() string {
-	if l.lua.object.IsClosed() {
-		return "" // Return empty string if the Lua VM is closed
-	}
-
-	l.object.RLock()
-	defer l.object.RUnlock()
-	lptr, err := l.object.PointerNoLock()
-	if err != nil {
-		return "" // Return empty string if the object is closed
-	}
-
-	str := C.luago_table_debug((*C.struct_LuaTable)(unsafe.Pointer(lptr)))
-	return moveStringToGo(str)
-}
-
-// ToValue converts the LuaTable to a Value.
-func (l *LuaTable) ToValue() Value {
-	return &ValueTable{value: l}
-}
-
-func (l *LuaTable) Close() error {
-	if l == nil || l.object == nil {
-		return nil // Nothing to close
-	}
-	// Close the LuaTable object
-	return l.object.Close()
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) string {
+		str := C.luago_table_debug(l.lua.ptr(), ptr)
+		return moveStringToGo(str)
+	})
 }

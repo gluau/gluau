@@ -1,5 +1,6 @@
 package vmutils
 
+/*
 import (
 	"errors"
 	"fmt"
@@ -391,3 +392,4 @@ func NewTypedUserData[T any]() *TypedUserData[T] {
 		metamethods:  make(map[string]func(*T, *vm.CallbackLua, []vm.Value) ([]vm.Value, error)),
 	}
 }
+*/

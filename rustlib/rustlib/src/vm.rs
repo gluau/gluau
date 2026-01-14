@@ -2,7 +2,7 @@ use std::ffi::{c_char, c_void, CString};
 
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::{wrap_failable, GoNoneResult, GoValueResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper};
+use crate::{IGoCallback, IGoCallbackWrapper, compiler::CompilerOpts, result::{GoNoneResult, GoValueV2Result, wrap_failable}, table::get_table, value_v2::{GoLuaValueV2, GoLuaValueV2Array}};
 
 // Represents the different standard libraries that can be loaded into the Luau VM.
 bitflags::bitflags! {
@@ -124,27 +124,26 @@ pub extern "C" fn luavm_sandbox(ptr: *mut mluau::Lua, enabled: bool) -> GoNoneRe
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_globals(ptr: *mut mluau::Lua) -> *mut mluau::Table {
+pub extern "C" fn luago_globals(ptr: *mut mluau::Lua) -> GoLuaValueV2 {
     wrap_failable(|| {
         // Safety: Assume ptr is a valid, non-null pointer to a Lua VM
         if ptr.is_null() {
-            return std::ptr::null_mut();
+            return GoLuaValueV2::empty();
         }
         let lua = unsafe { &*ptr };
-        Box::into_raw(Box::new(lua.globals()))
+        GoLuaValueV2::from_value(lua, mluau::Value::Table(lua.globals()))
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_setglobals(ptr: *mut mluau::Lua, tab: *mut mluau::Table) -> GoNoneResult {
+pub extern "C" fn luago_setglobals(ptr: *mut mluau::Lua, tab: GoLuaValueV2) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume ptr is a valid, non-null pointer to a Lua VM
-        if ptr.is_null() {
-            return GoNoneResult::err("Lua pointer is null".to_string());
-        }
         let lua = unsafe { &*ptr };
-        let tab = unsafe { &*tab };
-        match lua.set_globals(tab.clone()) {
+        let tab = match get_table(lua, tab) {
+            Some(t) => t,
+            None => return GoNoneResult::err("Provided value is not a table".to_string()),
+        };
+        match lua.set_globals(tab) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }
@@ -218,33 +217,28 @@ pub extern "C" fn luago_remove_interrupt(ptr: *mut mluau::Lua)  {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_current_thread(ptr: *mut mluau::Lua) -> *mut mluau::Thread {
+pub extern "C" fn luago_current_thread(ptr: *mut mluau::Lua) -> GoLuaValueV2 {
     wrap_failable(|| {
         // Safety: Assume ptr is a valid, non-null pointer to a Lua
         if ptr.is_null() {
-            return std::ptr::null_mut();
+            return GoLuaValueV2::empty();
         }
 
         let lua = unsafe { &*ptr };
-        Box::into_raw(Box::new(lua.current_thread()))
+
+        GoLuaValueV2::from_value(lua, mluau::Value::Thread(lua.current_thread()))
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_yield_with(ptr: *mut mluau::Lua, args: *mut GoMultiValue) -> GoNoneResult {
+pub extern "C" fn luago_yield_with(ptr: *mut mluau::Lua, args: GoLuaValueV2Array) -> GoNoneResult {
     wrap_failable(|| {
-        // Safety: Assume ptr is a valid, non-null pointer to a Lua
-        if ptr.is_null() {
-            return GoNoneResult::err("Lua pointer is null".to_string());
-        }
+        let lua = unsafe { &*ptr };
+        let values = args.to_values(lua);
 
         let lua = unsafe { &*ptr };
-        // Safety: Go side must ensure values cannot be used after it is set
-        // here as a return value
-        let values = unsafe { Box::from_raw(args) };
-        let values_mv = values.values.into_inner().unwrap();
 
-        match lua.yield_with(values_mv) {
+        match lua.yield_with(values) {
             Ok(_) => GoNoneResult::ok(),
             Err(err) => GoNoneResult::err(format!("{err}")),
         }
@@ -278,20 +272,14 @@ pub extern "C" fn luago_memory_limit(ptr: *mut mluau::Lua) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8, tab: *mut mluau::Table) {
+pub extern "C" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8, tab: GoLuaValueV2) {
     wrap_failable(|| {
         // ptr must be non-null however tab may be null.
         if ptr.is_null() {
             return;
         }
-
         let lua = unsafe { &*ptr };
-        let tab = if tab.is_null() {
-            None
-        } else {
-            let tab = unsafe { &*tab };
-            Some(tab.clone())
-        };
+        let tab = get_table(lua, tab);
         match typ {
             0 => lua.set_type_metatable::<bool>(tab),
             1 => lua.set_type_metatable::<mluau::LightUserData>(tab),
@@ -307,14 +295,14 @@ pub extern "C" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8, tab: *
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_set_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize, value: GoLuaValue) -> GoNoneResult {
+pub extern "C" fn luago_set_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize, value: GoLuaValueV2) -> GoNoneResult {
     wrap_failable(|| {
         if ptr.is_null() {
             return GoNoneResult::err("Lua pointer is null".to_string());
         }
 
         let lua = unsafe { &*ptr };
-        let value = value.to_value_from_owned();
+        let value = value.to_value(lua);
         let key = if key.is_null() {
             unsafe { std::str::from_utf8_unchecked(&[]) }
         } else {
@@ -332,10 +320,10 @@ pub extern "C" fn luago_set_named_registry_value(ptr: *mut mluau::Lua, key: *con
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize) -> GoValueResult {
+pub extern "C" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize) -> GoValueV2Result {
     wrap_failable(|| {
         if ptr.is_null() {
-            return GoValueResult::err("Lua pointer is null".to_string());
+            return GoValueV2Result::err("Lua pointer is null".to_string());
         }
 
         let lua = unsafe { &*ptr };
@@ -345,12 +333,12 @@ pub extern "C" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c
             let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
             match std::str::from_utf8(key) {
                 Ok(s) => s,
-                Err(_) => return GoValueResult::err("Invalid UTF-8 key".to_string()),
+                Err(_) => return GoValueV2Result::err("Invalid UTF-8 key".to_string()),
             }
         };
         match lua.named_registry_value::<mluau::Value>(key) {
-            Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
-            Err(err) => GoValueResult::err(format!("{err}")),
+            Ok(v) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, v)),
+            Err(err) => GoValueV2Result::err(format!("{err}")),
         }
     })
 }

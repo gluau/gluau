@@ -1,4 +1,4 @@
-use crate::{compiler::CompilerOpts, result::{wrap_failable, GoFunctionResult}};
+use crate::{compiler::CompilerOpts, result::{GoValueV2Result, wrap_failable}, table::get_table, value_v2::GoLuaValueV2};
 
 // A ChunkString will be deallocated by Rust directly.
 pub struct ChunkString {
@@ -25,7 +25,7 @@ pub struct ChunkOpts {
     // The name of the chunk, used for debugging and error messages.
     pub name: *mut ChunkString,
     // The environment table for the chunk.
-    pub env: *mut mluau::Table,
+    pub env: GoLuaValueV2,
     // The chunks mode (either text or binary).
     pub mode: u8,
     // The compiler options for the chunk.
@@ -35,10 +35,10 @@ pub struct ChunkOpts {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoFunctionResult {
+pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoValueV2Result {
     wrap_failable(|| {
         if ptr.is_null() || opts.code.is_null() {
-            return GoFunctionResult::err("Lua pointer or ChunkOpts code is null".to_string());
+            return GoValueV2Result::err("Lua pointer or ChunkOpts code is null".to_string());
         }
 
         let lua = unsafe { &*ptr };
@@ -51,9 +51,8 @@ pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoF
             chunk = chunk.set_name(String::from_utf8_lossy(&name.data));
         }
 
-        if !opts.env.is_null() {
-            let tab = unsafe { &*(opts.env) };
-            chunk = chunk.set_environment(tab.clone());
+        if let Some(tab) = get_table(lua, opts.env) {
+            chunk = chunk.set_environment(tab);
         }
 
         chunk = match opts.mode {
@@ -68,8 +67,8 @@ pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoF
         }
 
         match chunk.into_function() {
-            Ok(f) => GoFunctionResult::ok(Box::into_raw(Box::new(f))),
-            Err(err) => GoFunctionResult::err(format!("{err}"))
+            Ok(f) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::Function(f))),
+            Err(err) => GoValueV2Result::err(format!("{err}"))
         }
     })
 }

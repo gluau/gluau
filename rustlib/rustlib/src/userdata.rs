@@ -1,4 +1,13 @@
-use crate::result::{wrap_failable, GoAnyUserDataResult, GoTableResult, GoUsizePtrResult};
+use mluau::Lua;
+use crate::{result::{GoUsizePtrResult, GoValueV2Result, wrap_failable}, table::get_table, value_v2::GoLuaValueV2};
+
+pub fn get_userdata(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::AnyUserData> {
+    let v = t.to_value(lua);
+    match v {
+        mluau::Value::UserData(b) => Some(b),
+        _ => None,
+    }
+}
 
 /// DynamicData stores the cgo handle + callback for dynamic userdata functions.
 #[repr(C)]
@@ -18,37 +27,33 @@ impl Drop for DynamicData {
 } 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_userdata(ptr: *mut mluau::Lua, data: DynamicData, mt: *mut mluau::Table) -> GoAnyUserDataResult {
+pub extern "C" fn luago_create_userdata(lua: *mut mluau::Lua, data: DynamicData, mt: GoLuaValueV2) -> GoValueV2Result {
     wrap_failable(|| {
         // Safety: Create a new userdata with the provided data and metatable.
-        if ptr.is_null() {
-            return GoAnyUserDataResult::err("Lua pointer is null".to_string());
-        }
-        if mt.is_null() {
-            return GoAnyUserDataResult::err("Metatable pointer is null".to_string());
-        }
-        let lua = unsafe { &*ptr };
-        let mt = unsafe { &*mt };
+        let lua = unsafe { &*lua };
+        let Some(mt) = get_table(lua, mt) else {
+            return GoValueV2Result::err("Metatable is not a table".to_string());
+        };
 
-        let res = lua.create_dynamic_userdata(data, mt);
+        let res = lua.create_dynamic_userdata(data, &mt);
 
         match res {
-            Ok(userdata) => GoAnyUserDataResult::ok(Box::into_raw(Box::new(userdata))),
-            Err(e) => GoAnyUserDataResult::err(e.to_string()),
+            Ok(userdata) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::UserData(userdata))),
+            Err(e) => GoValueV2Result::err(e.to_string()),
         }
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_get_userdata_handle(ud: *mut mluau::AnyUserData) -> GoUsizePtrResult {
+pub extern "C" fn luago_get_userdata_handle(lua: *mut mluau::Lua, ud: GoLuaValueV2) -> GoUsizePtrResult {
     wrap_failable(|| {
         // Safety: Assume userdata is a valid, non-null pointer to a Lua Userdata
-        if ud.is_null() {
-            return GoUsizePtrResult::err("LuaUserData pointer is null".to_string());
-        }
+        let lua = unsafe { &*lua };
+        let Some(ud) = get_userdata(lua, ud) else {
+            return GoUsizePtrResult::err("Value is not a LuaUserData".to_string());
+        };
 
-        let userdata = unsafe { &*ud };
-        match userdata.dynamic_data::<DynamicData>() {
+        match ud.dynamic_data::<DynamicData>() {
             Ok(data) => GoUsizePtrResult::ok(data.handle),
             Err(e) => GoUsizePtrResult::err(e.to_string()),
         }
@@ -56,63 +61,19 @@ pub extern "C" fn luago_get_userdata_handle(ud: *mut mluau::AnyUserData) -> GoUs
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_userdata_to_pointer(userdata: *mut mluau::AnyUserData) -> usize {
+pub extern "C" fn luago_userdata_metatable(lua: *mut mluau::Lua, userdata: GoLuaValueV2) -> GoValueV2Result {
     wrap_failable(|| {
-        // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
-        if userdata.is_null() {
-            return 0;
-        }
+        let lua = unsafe { &*lua };
+        let Some(userdata) = get_userdata(lua, userdata) else {
+            return GoValueV2Result::err("Value is not a LuaUserData".to_string());
+        };
 
-        let lua_userdata = unsafe { &*userdata };
-
-        let ptr = lua_userdata.to_pointer();
-
-        ptr as usize
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_userdata_metatable(userdata: *mut mluau::AnyUserData) -> GoTableResult {
-    wrap_failable(|| {
-        // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
-        if userdata.is_null() {
-            return GoTableResult::err("LuaUserData pointer is null".to_string());
-        }
-
-        let lua_userdata = unsafe { &*userdata };
         // SAFETY: Luau does not have __gc metamethod, so this is safe to call here.
-        let mt = unsafe { lua_userdata.underlying_metatable() };
+        let mt = unsafe { userdata.underlying_metatable() };
 
         match mt {
-            Ok(mt) => GoTableResult::ok(Box::into_raw(Box::new(mt))),
-            Err(e) => GoTableResult::err(e.to_string()),
+            Ok(mt) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::Table(mt))),
+            Err(e) => GoValueV2Result::err(e.to_string()),
         }
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_userdata_equals(ud: *mut mluau::AnyUserData, ud2: *mut mluau::AnyUserData) -> bool {
-    wrap_failable(|| {
-        if ud.is_null() || ud2.is_null() {
-            return ud.is_null() && ud2.is_null(); // If both are null, they are equal
-        }
-
-        let ud1 = unsafe { &*ud };
-        let ud2 = unsafe { &*ud2 };
-
-        ud1 == ud2
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_free_userdata(ud: *mut mluau::AnyUserData) {
-    wrap_failable(|| {
-        // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
-        if ud.is_null() {
-            return;
-        }
-
-        // Re-box the Lua Userdata pointer to manage its memory automatically.
-        unsafe { drop(Box::from_raw(ud)) };
     })
 }

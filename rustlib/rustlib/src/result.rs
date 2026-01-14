@@ -1,6 +1,6 @@
 use std::{ffi::{c_char, CString}, panic::AssertUnwindSafe};
 
-use crate::{multivalue::GoMultiValue, value::GoLuaValue};
+use crate::value_v2::{GoLuaValueV2, GoLuaValueV2Array};
 
 pub trait Errorable {
     fn error_variant(s: String) -> Self;
@@ -125,209 +125,13 @@ impl Errorable for GoUsizePtrResult {
 }
 
 #[repr(C)]
-pub struct GoStringResult {
-    value: *mut mluau::String,
+pub struct GoValueV2Result {
+    value: GoLuaValueV2,
     error: *mut c_char
 }
 
-impl GoStringResult {
-    pub fn ok(s: *mut mluau::String) -> Self {
-        Self {
-            value: s,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoStringResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoTableResult {
-    value: *mut mluau::Table,
-    error: *mut c_char
-}
-
-impl GoTableResult {
-    pub fn ok(t: *mut mluau::Table) -> Self {
-        Self {
-            value: t,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoTableResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoFunctionResult {
-    value: *mut mluau::Function,
-    error: *mut c_char
-}
-
-impl GoFunctionResult {
-    pub fn ok(f: *mut mluau::Function) -> Self {
-        Self {
-            value: f,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoFunctionResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoAnyUserDataResult {
-    value: *mut mluau::AnyUserData,
-    error: *mut c_char
-}
-
-impl GoAnyUserDataResult {
-    pub fn ok(f: *mut mluau::AnyUserData) -> Self {
-        Self {
-            value: f,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoAnyUserDataResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoMultiValueResult {
-    value: *mut GoMultiValue,
-    error: *mut c_char
-}
-
-impl GoMultiValueResult {
-    pub fn ok(f: *mut GoMultiValue) -> Self {
-        Self {
-            value: f,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoMultiValueResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoThreadResult {
-    value: *mut mluau::Thread,
-    error: *mut c_char
-}
-
-impl GoThreadResult {
-    pub fn ok(t: *mut mluau::Thread) -> Self {
-        Self {
-            value: t,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoThreadResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoBufferResult {
-    value: *mut mluau::Buffer,
-    error: *mut c_char
-}
-
-impl GoBufferResult {
-    pub fn ok(b: *mut mluau::Buffer) -> Self {
-        Self {
-            value: b,
-            error: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn err(error: String) -> Self {
-        Self {
-            value: std::ptr::null_mut(),
-            error: to_c_string(error),
-        }
-    }
-}
-
-impl Errorable for GoBufferResult {
-    fn error_variant(s: String) -> Self {
-        Self::err(s)
-    }
-}
-
-#[repr(C)]
-pub struct GoValueResult {
-    value: GoLuaValue,
-    error: *mut c_char
-}
-
-impl GoValueResult {
-    pub fn ok(v: GoLuaValue) -> Self {
+impl GoValueV2Result {
+    pub fn ok(v: GoLuaValueV2) -> Self {
         Self {
             value: v,
             error: std::ptr::null_mut(),
@@ -336,13 +140,44 @@ impl GoValueResult {
 
     pub fn err(error: String) -> Self {
         Self {
-            value: GoLuaValue::from_owned(mluau::Value::Nil),
+            value: GoLuaValueV2::empty(),
             error: to_c_string(error),
         }
     }
 }
 
-impl Errorable for GoValueResult {
+impl Errorable for GoValueV2Result {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
+#[repr(C)]
+pub struct GoLuaValueV2ArrayResult {
+    value: GoLuaValueV2Array,
+    error: *mut c_char
+}
+
+impl GoLuaValueV2ArrayResult {
+    pub fn ok(v: GoLuaValueV2Array) -> Self {
+        Self {
+            value: v,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: String) -> Self {
+        Self {
+            value: GoLuaValueV2Array {
+                values: std::ptr::null_mut(),
+                size: 0,
+            },
+            error: to_c_string(error),
+        }
+    }
+}
+
+impl Errorable for GoLuaValueV2ArrayResult {
     fn error_variant(s: String) -> Self {
         Self::err(s)
     }
@@ -437,8 +272,8 @@ impl<T> Errorable for *mut T {
     }
 }
 
-impl Errorable for GoLuaValue {
+impl Errorable for GoLuaValueV2 {
     fn error_variant(_s: String) -> Self {
-        GoLuaValue::from_owned(mluau::Value::Nil)
+        GoLuaValueV2::empty()
     }
 }
