@@ -1,4 +1,4 @@
-use crate::{compiler::CompilerOpts, result::{GoValueV2Result, wrap_failable}, table::get_table, value_v2::GoLuaValueV2};
+use crate::{VmHandle, compiler::CompilerOpts, result::{GoValueV2Result, wrap_failable}, table::get_table, value_v2::GoLuaValueV2};
 
 // A ChunkString will be deallocated by Rust directly.
 pub struct ChunkString {
@@ -35,13 +35,13 @@ pub struct ChunkOpts {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoValueV2Result {
+pub extern "C" fn luago_load_chunk(ptr: VmHandle, opts: ChunkOpts) -> GoValueV2Result {
     wrap_failable(|| {
-        if ptr.is_null() || opts.code.is_null() {
+        if opts.code.is_null() {
             return GoValueV2Result::err("Lua pointer or ChunkOpts code is null".to_string());
         }
 
-        let lua = unsafe { &*ptr };
+        let lua = ptr.get();
         let code = unsafe { Box::from_raw(opts.code) };
         
         // Load the chunk with the provided options
@@ -51,7 +51,7 @@ pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoV
             chunk = chunk.set_name(String::from_utf8_lossy(&name.data));
         }
 
-        if let Some(tab) = get_table(lua, opts.env) {
+        if let Some(tab) = get_table(&lua, opts.env) {
             chunk = chunk.set_environment(tab);
         }
 
@@ -67,7 +67,7 @@ pub extern "C" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoV
         }
 
         match chunk.into_function() {
-            Ok(f) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::Function(f))),
+            Ok(f) => GoValueV2Result::ok(GoLuaValueV2::from_value(&lua, mluau::Value::Function(f))),
             Err(err) => GoValueV2Result::err(format!("{err}"))
         }
     })

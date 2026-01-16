@@ -207,6 +207,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "mluau",
+ "parking_lot",
 ]
 
 [[package]]

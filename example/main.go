@@ -23,7 +23,7 @@ func main() {
 
 	// Create a Go function that appends strings
 	// This will be called from Luau
-	appendFunc, err := lua.CreateFunction(func(cb *vm.CallbackLua, args []any) ([]any, error) {
+	appendFunc, err := lua.CreateFunction(func(cb *vm.Lua, args []any) ([]any, error) {
 		if len(args) < 2 {
 			return nil, fmt.Errorf("append requires 2 string arguments")
 		}
@@ -45,7 +45,7 @@ func main() {
 		fmt.Printf("[Go] Appending '%s' + '%s' = '%s'\n", str1.String(), str2.String(), result)
 
 		// Return the result back to Luau
-		return []any{cb.MainState().MustCreateString(result)}, nil
+		return []any{result}, nil
 	})
 	if err != nil {
 		log.Fatal("Failed to create Go function:", err)

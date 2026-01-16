@@ -4,7 +4,7 @@ use std::ffi::c_char;
 
 use mluau::Lua;
 
-use crate::{result::{Errorable, GoValueV2Result, wrap_failable}, value_v2::GoLuaValueV2};
+use crate::{VmHandle, result::{Errorable, GoValueV2Result, wrap_failable}, value_v2::GoLuaValueV2};
 
 pub fn get_string(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::String> {
     let v = t.to_value(lua);
@@ -15,12 +15,9 @@ pub fn get_string(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::String> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_string(ptr: *mut mluau::Lua, s: *const c_char, len: usize) -> GoValueV2Result {
+pub extern "C" fn luago_create_string(ptr: VmHandle, s: *const c_char, len: usize) -> GoValueV2Result {
     wrap_failable(|| {
-        // Safety: Assume ptr is a valid, non-null pointer to a Lua
-        // and that s points to a valid C string of length len.
-        let lua = unsafe { &*ptr };
-
+        let lua = ptr.get();
         let res = if s.is_null() {
             // Create an empty string if the pointer is null.
             lua.create_string("")
@@ -30,7 +27,7 @@ pub extern "C" fn luago_create_string(ptr: *mut mluau::Lua, s: *const c_char, le
         };
 
         match res {
-            Ok(str) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, mluau::Value::String(str))),
+            Ok(str) => GoValueV2Result::ok(GoLuaValueV2::from_value(&lua, mluau::Value::String(str))),
             Err(err) => GoValueV2Result::err(format!("{err}"))
         }
     })
@@ -54,10 +51,10 @@ impl Errorable for LuaStringBytes {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_as_bytes(lua: *mut Lua, string: GoLuaValueV2) -> LuaStringBytes {
+pub extern "C" fn luago_string_as_bytes(ptr: VmHandle, string: GoLuaValueV2) -> LuaStringBytes {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        let Some(string) = get_string(lua, string) else {
+        let lua = ptr.get();
+        let Some(string) = get_string(&lua, string) else {
             return LuaStringBytes {
                 data: std::ptr::null(),
                 size: 0,
@@ -74,10 +71,10 @@ pub extern "C" fn luago_string_as_bytes(lua: *mut Lua, string: GoLuaValueV2) -> 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_as_bytes_with_nul(lua: *mut Lua, string: GoLuaValueV2) -> LuaStringBytes {
+pub extern "C" fn luago_string_as_bytes_with_nul(ptr: VmHandle, string: GoLuaValueV2) -> LuaStringBytes {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        let Some(string) = get_string(lua, string) else {
+        let lua = ptr.get();
+        let Some(string) = get_string(&lua, string) else {
             return LuaStringBytes {
                 data: std::ptr::null(),
                 size: 0,

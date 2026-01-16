@@ -35,6 +35,14 @@ impl<T> Arena<T> {
         }
     }
 
+    pub const fn const_new() -> Self {
+        Self {
+            slots: Vec::new(),
+            first_free: None,
+            generation_counters: Vec::new(),
+        }
+    }
+
     /// O(1) Allocation
     pub fn insert(&mut self, value: T) -> Handle {
         if let Some(idx) = self.first_free {

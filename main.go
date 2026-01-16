@@ -260,7 +260,7 @@ func main() {
 	}
 	fmt.Println("empty table equals itself", equals)
 
-	myFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
+	myFunc, err := vm.CreateFunction(func(lua *vmlib.Lua, args []any) ([]any, error) {
 		return []any{"Hello world"}, nil
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func main() {
 	fmt.Println("Function call response", res[0].(*vmlib.LuaString).String())
 	defer res[0].(*vmlib.LuaString).Close()
 
-	myFunc, err = vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
+	myFunc, err = vm.CreateFunction(func(lua *vmlib.Lua, args []any) ([]any, error) {
 		fmt.Println("Function called with arg:", args[0])
 		return nil, errors.New(args[0].(*vmlib.LuaString).String())
 	})
@@ -421,7 +421,7 @@ func main() {
 	}
 
 	// Interrupt API
-	vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
 		return vmlib.VmStateContinue, errors.New("test interrupt error")
 	})
 
@@ -450,7 +450,7 @@ func main() {
 	// Set a new interrupt which will yield the execution
 	// after 100 milliseconds
 	timeNow := time.Now()
-	vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
 		if time.Since(timeNow) > 10*time.Millisecond {
 			fmt.Println("Interrupt triggered after 1 second on thread with status", funcVm.CurrentThread().Status())
 			return vmlib.VmStateYield, nil // Yield the execution after 100 milliseconds
@@ -495,7 +495,7 @@ func main() {
 	thread.Close()
 
 	// Test with erroring interrupt
-	vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
 		return vmlib.VmStateContinue, errors.New("test interrupt error")
 	})
 
@@ -549,7 +549,7 @@ func main() {
 	}
 	defer thread2.Close() // Ensure we close the Lua thread when done
 	fmt.Println("Lua thread 3 created successfully:", thread2)
-	yieldFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []any) ([]any, error) {
+	yieldFunc, err := vm.CreateFunction(func(lua *vmlib.Lua, args []any) ([]any, error) {
 		lua.YieldWith([]any{"yielded value"})
 		return []any{}, nil
 	})
@@ -597,7 +597,7 @@ func main() {
 		myTypeMt.Set(
 			"__tostring",
 			vmutils.Must(
-				vm2.CreateFunction(func(funcVm *vmlib.CallbackLua, args []any) ([]any, error) {
+				vm2.CreateFunction(func(funcVm *vmlib.Lua, args []any) ([]any, error) {
 					fmt.Println("test")
 					return []any{"hello"}, nil
 				}),

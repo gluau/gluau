@@ -1,6 +1,6 @@
 use mluau::Lua;
 
-use crate::{result::{GoBoolResult, wrap_failable}, valuearena::{Arena, Handle}};
+use crate::{VmHandle, result::{GoBoolResult, wrap_failable}, valuearena::{Arena, Handle}};
 
 #[repr(C)]
 pub enum LuaValueTypeV2 {
@@ -153,28 +153,28 @@ impl GoLuaValueV2 {
 
 // Note: this is safe to call multiple times thanks to the memory arena.
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_valuev2_destroy(lua: *mut mluau::Lua, value: GoLuaValueV2) {
+pub extern "C" fn luago_valuev2_destroy(lua: VmHandle, value: GoLuaValueV2) {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        value.destroy(lua);
+        let lua = lua.get();
+        value.destroy(&lua);
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_valuev2_topointer(lua: *mut mluau::Lua, value: GoLuaValueV2) -> usize {
+pub extern "C" fn luago_valuev2_topointer(lua: VmHandle, value: GoLuaValueV2) -> usize {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        let val = value.to_value(lua);
+        let lua = lua.get();
+        let val = value.to_value(&lua);
         val.to_pointer() as usize
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_valuev2_equals(lua: *mut mluau::Lua, a: GoLuaValueV2, b: GoLuaValueV2) -> GoBoolResult {
+pub extern "C" fn luago_valuev2_equals(lua: VmHandle, a: GoLuaValueV2, b: GoLuaValueV2) -> GoBoolResult {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        let t1 = a.to_value(lua);
-        let t2 = b.to_value(lua);
+        let lua = lua.get();
+        let t1 = a.to_value(&lua);
+        let t2 = b.to_value(&lua);
 
         match t1.equals(&t2) {
             Ok(eq) => GoBoolResult::ok(eq),
@@ -260,7 +260,7 @@ pub extern "C" fn luago_valuev2array_alloc(size: usize) -> GoLuaValueV2Array {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn luago_valuev2array_destroy(array: GoLuaValueV2Array) {
-    println!("Destroying GoLuaValueV2Array of size {}", array.size);
+    //println!("Destroying GoLuaValueV2Array of size {}", array.size);
     wrap_failable(|| {
         array.destroy();
     })

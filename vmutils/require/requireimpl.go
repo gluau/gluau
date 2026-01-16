@@ -86,7 +86,7 @@ func (r *SimpleRequirer) Config() ([]byte, error) {
 	return io.ReadAll(file)
 }
 
-func (r *SimpleRequirer) Loader(cb *vm.CallbackLua) (*vm.LuaFunction, error) {
+func (r *SimpleRequirer) Loader(cb *vm.Lua) (*vm.LuaFunction, error) {
 	r.debugPrint("Loading module from:", r.vfs.getFilePath())
 	chunkname := r.vfs.getAbsoluteFilePath()
 	file, err := r.vfs.fs.Open(chunkname)
@@ -99,7 +99,7 @@ func (r *SimpleRequirer) Loader(cb *vm.CallbackLua) (*vm.LuaFunction, error) {
 		return nil, err
 	}
 
-	return cb.MainState().LoadChunk(vm.ChunkOpts{
+	return cb.LoadChunk(vm.ChunkOpts{
 		Name: chunkname,
 		Code: string(content),
 		Mode: vm.ChunkModeText,

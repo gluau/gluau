@@ -14,6 +14,8 @@ pub mod require;
 
 use std::ffi::c_void;
 
+use crate::{valuearena::{Arena, Handle}};
+
 // typedef void (*Callback)(void* val, void* handle);
 // typedef void (*DropCallback)(void* handle);
 type Callback = extern "C" fn(val: *mut c_void, handle: usize);
@@ -62,4 +64,30 @@ pub extern "C" fn test_callback(cb: IGoCallback, val: *mut c_void) {
     // Safety: Call the callback function with the provided value.
     let wrapper = IGoCallbackWrapper::new(cb);
     wrapper.callback(val);
+}
+
+pub(crate) static VM_ARENA: parking_lot::RwLock<Arena<mluau::Lua>> = parking_lot::RwLock::new(Arena::const_new());
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct VmHandle {
+    pub handle: Handle,
+}
+
+impl VmHandle {
+    pub fn new(lua: mluau::Lua) -> Self {
+        let mut arena_lock = VM_ARENA.write();
+        let handle = arena_lock.insert(lua);
+        VmHandle { handle }
+    }
+
+    pub fn get(&self) -> mluau::Lua {
+        let arena_lock = VM_ARENA.read();
+        arena_lock.get(self.handle).cloned().expect("Invalid VM handle")
+    }
+
+    pub fn remove(&self) {
+        let mut arena_lock = VM_ARENA.write();
+        arena_lock.remove(self.handle);
+    }
 }

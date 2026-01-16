@@ -76,7 +76,7 @@ func (l *LuaFunction) Environment() (*LuaTable, error) {
 
 // Sets the environment table of the LuaFunction returning true if the environment was set
 func (l *LuaFunction) SetEnvironment(env *LuaTable) (bool, error) {
-	if env.lua != l.lua {
+	if !env.lua.IsSameVm(l.lua) {
 		return false, fmt.Errorf("cannot set environment table from different Lua instance")
 	}
 

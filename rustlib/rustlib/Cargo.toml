@@ -9,6 +9,7 @@ crate-type = ["staticlib"]
 [dependencies]
 mluau = { git = "https://github.com/mluau/mluau", features = ["send"] }
 bitflags = "2.9"
+parking_lot = "0.12"
 
 [profile.release]
 opt-level = "z"

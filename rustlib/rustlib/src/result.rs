@@ -1,6 +1,6 @@
 use std::{ffi::{c_char, CString}, panic::AssertUnwindSafe};
 
-use crate::value_v2::{GoLuaValueV2, GoLuaValueV2Array};
+use crate::{VmHandle, value_v2::{GoLuaValueV2, GoLuaValueV2Array}, valuearena::Handle};
 
 pub trait Errorable {
     fn error_variant(s: String) -> Self;
@@ -147,6 +147,34 @@ impl GoValueV2Result {
 }
 
 impl Errorable for GoValueV2Result {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
+#[repr(C)]
+pub struct GoVmHandleResult {
+    value: VmHandle,
+    error: *mut c_char
+}
+
+impl GoVmHandleResult {
+    pub fn ok(v: VmHandle) -> Self {
+        Self {
+            value: v,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: String) -> Self {
+        Self {
+            value: VmHandle { handle: Handle { index: 0, generation: 0 } },
+            error: to_c_string(error),
+        }
+    }
+}
+
+impl Errorable for GoVmHandleResult {
     fn error_variant(s: String) -> Self {
         Self::err(s)
     }

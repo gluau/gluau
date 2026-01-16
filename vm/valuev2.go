@@ -201,12 +201,11 @@ func baseRefToC(lua *Lua, bv *BaseRef) (C.struct_GoLuaValueV2, error, *BaseRef) 
 	if bv == nil || bv.closed.Load() {
 		return C.struct_GoLuaValueV2{}, errors.New("cannot convert nil LuaTable to GoLuaValueV2"), nil
 	}
-	defer bv.lua.object.RUnlock()
-	bv.lua.object.RLock()
-	if lua != bv.lua {
+
+	if !lua.IsSameVm(bv.lua) {
 		return C.struct_GoLuaValueV2{}, errors.New("cannot convert LuaTable from different Lua VM to GoLuaValueV2"), nil
 	}
-	if bv.lua.object.IsClosed() {
+	if bv.lua.IsClosed() {
 		return C.struct_GoLuaValueV2{}, errors.New("cannot convert LuaTable from closed Lua VM to GoLuaValueV2"), nil
 	}
 	return bv.value, nil, bv
@@ -227,9 +226,7 @@ func newBaseRef(lua *Lua, value C.struct_GoLuaValueV2) *BaseRef {
 
 // withBaseRef() calls a callback function with the underlying GoLuaValueV2
 func withBaseRef[T any](bv *BaseRef, fn func(ptr C.struct_GoLuaValueV2) (T, error)) (T, error) {
-	defer bv.lua.object.RUnlock()
-	bv.lua.object.RLock()
-	if bv.lua.object.IsClosed() {
+	if bv.lua.IsClosed() {
 		var zero T
 		return zero, errors.New("cannot use closed Lua VM")
 	}
@@ -244,9 +241,8 @@ func withBaseRef[T any](bv *BaseRef, fn func(ptr C.struct_GoLuaValueV2) (T, erro
 
 // withBaseRef() calls a callback function with the underlying GoLuaValueV2
 func withBaseRefNoRet(bv *BaseRef, fn func(ptr C.struct_GoLuaValueV2) error) error {
-	defer bv.lua.object.RUnlock()
-	bv.lua.object.RLock()
-	if bv.lua.object.IsClosed() {
+
+	if bv.lua.IsClosed() {
 		return errors.New("cannot use closed Lua VM")
 	}
 
@@ -259,10 +255,8 @@ func withBaseRefNoRet(bv *BaseRef, fn func(ptr C.struct_GoLuaValueV2) error) err
 
 // withBaseRef() calls a callback function with the underlying GoLuaValueV2
 func withBaseRefDefault[T any](bv *BaseRef, fn func(ptr C.struct_GoLuaValueV2) T) T {
-	defer bv.lua.object.RUnlock()
-	bv.lua.object.RLock()
 
-	if bv.lua.object.IsClosed() {
+	if bv.lua.IsClosed() {
 		var zero T
 		return zero
 	}
@@ -280,8 +274,6 @@ func withBaseRefDefault[T any](bv *BaseRef, fn func(ptr C.struct_GoLuaValueV2) T
 // This pointer is only useful for hashing/debugging
 // and cannot be converted back to the original Lua value.
 func (bv *BaseRef) Pointer() uint64 {
-	defer bv.lua.object.RUnlock()
-	bv.lua.object.RLock()
 
 	if bv.closed.Load() {
 		return 0
@@ -319,12 +311,9 @@ func (bv *BaseRef) Equals(v any) (bool, error) {
 		return false, fmt.Errorf("cannot compare BaseRef with value of type %T", v)
 	}
 
-	if bv.lua != other.lua {
+	if !bv.lua.IsSameVm(other.lua) {
 		return false, errors.New("cannot compare values from different Lua VMs")
 	}
-
-	bv.lua.object.RLock()
-	defer bv.lua.object.RUnlock()
 
 	if bv.closed.Load() || other.closed.Load() {
 		return false, errors.New("cannot use closed object")
@@ -348,14 +337,12 @@ func (bv *BaseRef) LooseEquals(v any) bool {
 
 // Close cleans up the value by calling the destructor and setting the pointer to nil.
 func (bv *BaseRef) Close() error {
-	defer bv.lua.object.RUnlock()
-	bv.lua.object.RLock()
 
 	if bv.closed.Swap(true) {
 		return nil
 	}
 
-	if bv.lua.object.IsClosed() {
+	if bv.lua.IsClosed() {
 		return nil
 	}
 

@@ -95,15 +95,12 @@ type Require interface {
 	// Returns a loader function for the current module, that when called, loads the module and returns the result.
 	//
 	// This function is only called if has_module returns true.
-	Loader(cb *CallbackLua) (*LuaFunction, error)
+	Loader(cb *Lua) (*LuaFunction, error)
 }
 
 // CreateRequireFunction creates a LuaFunction via Luau's Require By String API using the
 // given requirer
 func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
-	l.object.RLock()
-	defer l.object.RUnlock()
-
 	lua, err := l.lua()
 	if err != nil {
 		return nil, err
@@ -246,15 +243,9 @@ func (l *Lua) CreateRequireFunction(require Require) (*LuaFunction, error) {
 			}
 		}()
 
-		callbackVm := &Lua{object: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
-		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
+		callbackVm := newLua(l.ptr(), cval.lua)
 
-		cbLua := &CallbackLua{
-			mainstate: l,          // The main Lua VM that owns this callback
-			cbstate:   callbackVm, // The callback Lua VM that is used to execute the callback
-		}
-
-		fn, err := require.Loader(cbLua)
+		fn, err := require.Loader(callbackVm)
 		if err != nil {
 			cval.error = moveStringToRust(err.Error())
 			return

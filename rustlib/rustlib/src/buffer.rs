@@ -2,7 +2,7 @@ use std::ffi::c_char;
 
 use mluau::{Lua, Value};
 
-use crate::{result::{GoValueV2Result, wrap_failable}, string::LuaStringBytes, value_v2::GoLuaValueV2};
+use crate::{VmHandle, result::{GoValueV2Result, wrap_failable}, string::LuaStringBytes, value_v2::GoLuaValueV2};
 
 fn get_buffer(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::Buffer> {
     let v = t.to_value(lua);
@@ -13,12 +13,9 @@ fn get_buffer(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::Buffer> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_create_buffer(ptr: *mut mluau::Lua, s: *const c_char, len: usize) -> GoValueV2Result  {
+pub extern "C" fn luago_create_buffer(ptr: VmHandle, s: *const c_char, len: usize) -> GoValueV2Result  {
     wrap_failable(|| {
-        // Safety: Assume ptr is a valid, non-null pointer to a Lua
-        // and that s points to a valid C string of length len.
-        let lua = unsafe { &*ptr };
-
+        let lua = ptr.get();
         let res = if s.is_null() {
             // Create an empty string if the pointer is null.
             lua.create_buffer(&[])
@@ -28,7 +25,7 @@ pub extern "C" fn luago_create_buffer(ptr: *mut mluau::Lua, s: *const c_char, le
         };
 
         match res {
-            Ok(buf) => GoValueV2Result::ok(GoLuaValueV2::from_value(lua, Value::Buffer(buf))),
+            Ok(buf) => GoValueV2Result::ok(GoLuaValueV2::from_value(&lua, Value::Buffer(buf))),
             Err(err) => GoValueV2Result::err(format!("{err}"))
         }
     })
@@ -36,10 +33,10 @@ pub extern "C" fn luago_create_buffer(ptr: *mut mluau::Lua, s: *const c_char, le
 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_len(lua: *mut Lua, buf: GoLuaValueV2) -> usize {
+pub extern "C" fn luago_buffer_len(lua: VmHandle, buf: GoLuaValueV2) -> usize {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        let Some(buf) = get_buffer(lua, buf) else {
+        let lua = lua.get();
+        let Some(buf) = get_buffer(&lua, buf) else {
             return 0
         };
 
@@ -48,11 +45,11 @@ pub extern "C" fn luago_buffer_len(lua: *mut Lua, buf: GoLuaValueV2) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_to_bytes(lua: *mut Lua, buf: GoLuaValueV2) -> LuaStringBytes {
+pub extern "C" fn luago_buffer_to_bytes(lua: VmHandle, buf: GoLuaValueV2) -> LuaStringBytes {
     wrap_failable(|| {
         // Safety: Assume string is a valid, non-null pointer to a Lua String
-        let lua = unsafe { &*lua };
-        let Some(buf) = get_buffer(lua, buf) else {
+        let lua = lua.get();
+        let Some(buf) = get_buffer(&lua, buf) else {
             return LuaStringBytes {
                 data: std::ptr::null(),
                 size: 0,
@@ -72,11 +69,11 @@ pub extern "C" fn luago_buffer_to_bytes(lua: *mut Lua, buf: GoLuaValueV2) -> Lua
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_read_bytes(lua: *mut Lua, buf: GoLuaValueV2, offset: usize, len: usize) -> LuaStringBytes {
+pub extern "C" fn luago_buffer_read_bytes(lua: VmHandle, buf: GoLuaValueV2, offset: usize, len: usize) -> LuaStringBytes {
     wrap_failable(|| {
         // Safety: Assume string is a valid, non-null pointer to a Lua String
-        let lua = unsafe { &*lua };
-        let Some(buf) = get_buffer(lua, buf) else {
+        let lua = lua.get();
+        let Some(buf) = get_buffer(&lua, buf) else {
             return LuaStringBytes {
                 data: std::ptr::null(),
                 size: 0,
@@ -96,10 +93,10 @@ pub extern "C" fn luago_buffer_read_bytes(lua: *mut Lua, buf: GoLuaValueV2, offs
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_write_bytes(lua: *mut Lua, buf: GoLuaValueV2, offset: usize, data: *const c_char, len: usize) {
+pub extern "C" fn luago_buffer_write_bytes(lua: VmHandle, buf: GoLuaValueV2, offset: usize, data: *const c_char, len: usize) {
     wrap_failable(|| {
-        let lua = unsafe { &*lua };
-        let Some(buf) = get_buffer(lua, buf) else {
+        let lua = lua.get();
+        let Some(buf) = get_buffer(&lua, buf) else {
             return;
         };
         let slice = unsafe { std::slice::from_raw_parts(data as *const u8, len) };
