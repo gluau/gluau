@@ -87,8 +87,8 @@ dependencies = [
 
 [[package]]
 name = "luau0-src"
-version = "0.15.5+luau686"
-source = "git+https://github.com/mluau/luau-src-rs#2505d926132c85d161b900eb7f3c1474fa3dd7fd"
+version = "0.17.1+luau702"
+source = "git+https://github.com/mluau/luau-src-rs#bedf2b8e60cb593b3dddd0a0c726523295af124a"
 dependencies = [
  "cc",
 ]
@@ -101,8 +101,8 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
 name = "mlua-sys"
-version = "0.8.3"
-source = "git+https://github.com/mluau/mluau#9bfc5cbf6169a0f58b6cab959b5d477da2e97d2c"
+version = "0.9.0"
+source = "git+https://github.com/mluau/mluau#41561afc3a203e952972d2ca0d67c2a0c79e2c8c"
 dependencies = [
  "cc",
  "cfg-if",
@@ -112,11 +112,12 @@ dependencies = [
 
 [[package]]
 name = "mluau"
-version = "0.11.2"
-source = "git+https://github.com/mluau/mluau#9bfc5cbf6169a0f58b6cab959b5d477da2e97d2c"
+version = "0.11.5"
+source = "git+https://github.com/mluau/mluau#41561afc3a203e952972d2ca0d67c2a0c79e2c8c"
 dependencies = [
  "bstr",
  "either",
+ "libc",
  "mlua-sys",
  "num-traits",
  "parking_lot",

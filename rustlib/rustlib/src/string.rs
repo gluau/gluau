@@ -4,7 +4,7 @@ use std::ffi::c_char;
 
 use mluau::Lua;
 
-use crate::{VmHandle, result::{Errorable, GoValueV2Result, wrap_failable}, value_v2::GoLuaValueV2};
+use crate::{VmHandle, externalstring::GoOwnedBytes, result::{GoValueV2Result, wrap_failable}, value_v2::GoLuaValueV2};
 
 pub fn get_string(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::String> {
     let v = t.to_value(lua);
@@ -33,59 +33,27 @@ pub extern "C" fn luago_create_string(ptr: VmHandle, s: *const c_char, len: usiz
     })
 }
 
-#[repr(C)]
-pub struct LuaStringBytes {
-    // Pointer to the string data
-    pub data: *const u8,
-    // Length of the string data
-    pub size: usize,
-}
-
-impl Errorable for LuaStringBytes {
-    fn error_variant(_s: String) -> Self {
-        Self {
-            data: std::ptr::null(),
-            size: 0,
-        }
-    }
-}
-
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_as_bytes(ptr: VmHandle, string: GoLuaValueV2) -> LuaStringBytes {
+pub extern "C" fn luago_string_len(lua: VmHandle, string: GoLuaValueV2) -> usize {
     wrap_failable(|| {
-        let lua = ptr.get();
+        let lua = lua.get();
         let Some(string) = get_string(&lua, string) else {
-            return LuaStringBytes {
-                data: std::ptr::null(),
-                size: 0,
-            };
+            return 0
         };
-        
-        // Return a pointer to the bytes of the Lua String.
-        let bytes = string.as_bytes();
-        LuaStringBytes {
-            data: bytes.as_ptr(),
-            size: bytes.len(),
-        }
+
+        string.as_bytes().len()
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_string_as_bytes_with_nul(ptr: VmHandle, string: GoLuaValueV2) -> LuaStringBytes {
+pub extern "C" fn luago_string_as_bytes(ptr: VmHandle, string: GoLuaValueV2, buf: GoOwnedBytes) {
     wrap_failable(|| {
         let lua = ptr.get();
         let Some(string) = get_string(&lua, string) else {
-            return LuaStringBytes {
-                data: std::ptr::null(),
-                size: 0,
-            };
+            return;
         };
         
-        // Return a pointer to the bytes of the Lua String.
-        let bytes = string.as_bytes_with_nul();
-        LuaStringBytes {
-            data: bytes.as_ptr(),
-            size: bytes.len(),
-        }
+        let bytes = string.as_bytes();
+        buf.copy_rust_bytes_to_go(&bytes);
     })
 }

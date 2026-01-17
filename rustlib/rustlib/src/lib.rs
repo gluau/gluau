@@ -11,6 +11,7 @@ pub mod userdata;
 pub mod thread;
 pub mod buffer;
 pub mod require;
+pub mod externalstring;
 
 use std::ffi::c_void;
 

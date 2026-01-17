@@ -49,12 +49,3 @@ func moveErrorToGo(err *C.char) error {
 	C.luago_string_free(err) // Free the error string
 	return errors.New(errStr)
 }
-
-func moveBytesToGo(data C.struct_LuaStringBytes) []byte {
-	if data.data == nil {
-		return nil
-	}
-
-	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
-	return goSlice
-}

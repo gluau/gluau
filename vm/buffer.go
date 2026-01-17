@@ -14,26 +14,57 @@ type LuaBuffer struct {
 	*BaseRef
 }
 
+type LuaBufferResult struct {
+	Bytes   []byte
+	Written uint64
+}
+
 // Returns the LuaBuffer as a byte slice
 //
 // Returns nil if the buffer is closed.
 func (l *LuaBuffer) Bytes() []byte {
 	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) []byte {
-		data := C.luago_buffer_to_bytes(l.lua.ptr(), ptr)
-		bytes := moveBytesToGo(data)
-		C.luago_buffer_free_bytes(data) // Free the buffer's bytes in Rust
+		size := C.luago_buffer_len(l.lua.ptr(), ptr)
+		bytes := make([]byte, size)
+		C.luago_buffer_to_bytes(l.lua.ptr(), ptr, createGoOwnedBytes(bytes))
 		return bytes
+	})
+}
+
+// Returns the LuaBuffer as a byte slice along with how much was written
+//
+// Returns nil if the buffer is closed.
+func (l *LuaBuffer) BytesAndWritten() LuaBufferResult {
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) LuaBufferResult {
+		size := C.luago_buffer_len(l.lua.ptr(), ptr)
+		bytes := make([]byte, size)
+		written := C.luago_buffer_to_bytes(l.lua.ptr(), ptr, createGoOwnedBytes(bytes))
+		return LuaBufferResult{
+			Bytes:   bytes,
+			Written: uint64(written),
+		}
 	})
 }
 
 // Returns the bytes from the LuaBuffer starting at the given offset
 // with the specified length.
-func (l *LuaBuffer) ReadBytes(offset, len uint64) (bytes []byte, err error) {
-	return withBaseRef(l.BaseRef, func(ptr C.struct_GoLuaValueV2) ([]byte, error) {
-		data := C.luago_buffer_read_bytes(l.lua.ptr(), ptr, C.size_t(offset), C.size_t(len))
-		bytes = moveBytesToGo(data)
-		C.luago_buffer_free_bytes(data) // Free the buffer's bytes in Rust
-		return bytes, nil
+func (l *LuaBuffer) ReadBytes(offset, len uint64) LuaBufferResult {
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) LuaBufferResult {
+		// Try measuring the size right now to know an approx bytes to allocate.
+		size := uint64(C.luago_buffer_len(l.lua.ptr(), ptr))
+		if offset >= uint64(size) {
+			return LuaBufferResult{} // offset beyond byte length
+		}
+		// Clamp the end index to the actual length
+		availableLen := size - offset
+		copyLen := min(len, availableLen)
+		bytes := make([]byte, copyLen)
+
+		written := C.luago_buffer_read_bytes(l.lua.ptr(), ptr, C.size_t(offset), C.size_t(len), createGoOwnedBytes(bytes))
+		return LuaBufferResult{
+			Bytes:   bytes,
+			Written: uint64(written),
+		}
 	})
 }
 

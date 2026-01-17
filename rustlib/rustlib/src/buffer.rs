@@ -2,7 +2,7 @@ use std::ffi::c_char;
 
 use mluau::{Lua, Value};
 
-use crate::{VmHandle, result::{GoValueV2Result, wrap_failable}, string::LuaStringBytes, value_v2::GoLuaValueV2};
+use crate::{VmHandle, externalstring::GoOwnedBytes, result::{GoValueV2Result, wrap_failable}, value_v2::GoLuaValueV2};
 
 fn get_buffer(lua: &Lua, t: GoLuaValueV2) -> Option<mluau::Buffer> {
     let v = t.to_value(lua);
@@ -45,50 +45,43 @@ pub extern "C" fn luago_buffer_len(lua: VmHandle, buf: GoLuaValueV2) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_to_bytes(lua: VmHandle, buf: GoLuaValueV2) -> LuaStringBytes {
+pub extern "C" fn luago_buffer_to_bytes(lua: VmHandle, ptr: GoLuaValueV2, buf: GoOwnedBytes) -> usize {
     wrap_failable(|| {
         // Safety: Assume string is a valid, non-null pointer to a Lua String
         let lua = lua.get();
-        let Some(buf) = get_buffer(&lua, buf) else {
-            return LuaStringBytes {
-                data: std::ptr::null(),
-                size: 0,
-            };
+        let Some(mbuf) = get_buffer(&lua, ptr) else {
+            return 0;
         };
         
         // Return a pointer to the bytes of the Lua String.
-        let bytes = buf.to_vec().into_boxed_slice();
-        let bytes_ptr = bytes.as_ptr();
-        let bytes_len = bytes.len();
-        std::mem::forget(bytes); // Prevent deallocation of the bytes
-        LuaStringBytes {
-            data: bytes_ptr,
-            size: bytes_len,
-        }
+        mbuf.with_bytes(|bytes| {
+            buf.copy_rust_bytes_to_go(bytes);
+            bytes.len()
+        })
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_read_bytes(lua: VmHandle, buf: GoLuaValueV2, offset: usize, len: usize) -> LuaStringBytes {
+pub extern "C" fn luago_buffer_read_bytes(lua: VmHandle, ptr: GoLuaValueV2, offset: usize, len: usize, buf: GoOwnedBytes) -> usize {
     wrap_failable(|| {
         // Safety: Assume string is a valid, non-null pointer to a Lua String
         let lua = lua.get();
-        let Some(buf) = get_buffer(&lua, buf) else {
-            return LuaStringBytes {
-                data: std::ptr::null(),
-                size: 0,
-            };
+        let Some(mbuf) = get_buffer(&lua, ptr) else {
+            return 0;
         };
         
         // Return a pointer to the bytes of the Lua String.
-        let bytes = buf.read_bytes_to_vec(offset, len).into_boxed_slice();
-        let bytes_ptr = bytes.as_ptr();
-        let bytes_len = bytes.len();
-        std::mem::forget(bytes); // Prevent deallocation of the bytes
-        LuaStringBytes {
-            data: bytes_ptr,
-            size: bytes_len,
-        }
+        mbuf.with_bytes(|bytes| {
+            if offset >= bytes.len() {
+                return 0; // offset beyond byte length
+            }
+            // Clamp the end index to the actual length
+            let available_len = bytes.len() - offset;
+            let copy_len: usize = std::cmp::min(len, available_len);
+            
+            buf.copy_rust_bytes_to_go(&bytes[offset..offset + copy_len]);
+            copy_len
+        })
     })
 }
 
@@ -101,19 +94,5 @@ pub extern "C" fn luago_buffer_write_bytes(lua: VmHandle, buf: GoLuaValueV2, off
         };
         let slice = unsafe { std::slice::from_raw_parts(data as *const u8, len) };
         buf.write_bytes(offset, slice);
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_buffer_free_bytes(buf: LuaStringBytes) {
-    wrap_failable(|| {
-        if buf.data.is_null() {
-            return; // Nothing to free
-        }
-
-        let s = std::ptr::slice_from_raw_parts_mut(buf.data as *mut u8, buf.size);
-        unsafe {
-            drop(Box::from_raw(s));
-        }
     })
 }

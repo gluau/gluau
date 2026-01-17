@@ -12,6 +12,13 @@ struct GoVmHandleResult {
     char* error;
 };
 
+struct GoOwnedBytes {
+    // Pointer to the borrowed bytes
+    uint8_t* data;
+    // Length of the borrowed bytes
+    size_t size;
+};
+
 // CompilerOpts API
 
 struct CompilerOpts {
@@ -54,6 +61,7 @@ struct IGoCallback {
 char* luago_string_new(const char* str, size_t len);
 void luago_string_free(char* result_error_ptr);
 
+size_t luago_string_len(struct Handle lua, struct GoLuaValueV2 ptr);
 // Returns a GoResult[LuaString]
 struct GoValueV2Result luago_create_string(struct Handle lua, const char* str, size_t len);
 
@@ -64,8 +72,7 @@ struct LuaStringBytes {
     size_t len;
 };
 
-struct LuaStringBytes luago_string_as_bytes(struct Handle lua, struct GoLuaValueV2 ptr);
-struct LuaStringBytes luago_string_as_bytes_with_nul(struct Handle lua, struct GoLuaValueV2 ptr);
+void luago_string_as_bytes(struct Handle lua, struct GoLuaValueV2 ptr, struct GoOwnedBytes buf);
 
 // GoLuaValueV2 related stuff
 
@@ -186,8 +193,9 @@ struct GoNoneResult luago_yield_with(struct Handle lua, struct GoLuaValueV2Array
 
 // Buffer API
 struct GoValueV2Result luago_create_buffer(struct Handle ptr, const char* s, size_t len);
-struct LuaStringBytes luago_buffer_to_bytes(struct Handle lua, struct GoLuaValueV2 ptr);
-struct LuaStringBytes luago_buffer_read_bytes(struct Handle lua, struct GoLuaValueV2 ptr, size_t offset, size_t len);
+// luago_buffer_to_bytes(lua: VmHandle, ptr: GoLuaValueV2, buf: GoOwnedBytes) -> usize {
+size_t luago_buffer_to_bytes(struct Handle lua, struct GoLuaValueV2 ptr, struct GoOwnedBytes buf);
+size_t luago_buffer_read_bytes(struct Handle lua, struct GoLuaValueV2 ptr, size_t offset, size_t len, struct GoOwnedBytes buf);
 void luago_buffer_write_bytes(struct Handle lua, struct GoLuaValueV2 ptr, size_t offset, const char* bytes, size_t len);
 void luago_buffer_free_bytes(struct LuaStringBytes bytes);
 size_t luago_buffer_len(struct Handle lua, struct GoLuaValueV2 ptr);

@@ -10,19 +10,21 @@ type LuaString struct {
 	*BaseRef
 }
 
-// Returns the LuaString as a byte slice
-func (l *LuaString) Bytes() []byte {
-	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) []byte {
-		data := C.luago_string_as_bytes(l.lua.ptr(), ptr)
-		return moveBytesToGo(data)
+// Returns the length of the LuaString in bytes
+func (l *LuaString) Len() int {
+	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) int {
+		length := C.luago_string_len(l.lua.ptr(), ptr)
+		return int(length)
 	})
 }
 
-// Returns the LuaString as a byte slice with nul terminator
-func (l *LuaString) BytesWithNUL() []byte {
+// Returns the LuaString as a byte slice
+func (l *LuaString) Bytes() []byte {
 	return withBaseRefDefault(l.BaseRef, func(ptr C.struct_GoLuaValueV2) []byte {
-		data := C.luago_string_as_bytes_with_nul(l.lua.ptr(), ptr)
-		return moveBytesToGo(data)
+		len := C.luago_string_len(l.lua.ptr(), ptr)
+		buf := make([]byte, int(len))
+		C.luago_string_as_bytes(l.lua.ptr(), ptr, createGoOwnedBytes(buf))
+		return []byte(buf)
 	})
 }
 

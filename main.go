@@ -39,7 +39,9 @@ func main() {
 	fmt.Println("Lua string created successfully:", luaString)
 	fmt.Println("Lua string as bytes:", string(luaString.Bytes()))
 	fmt.Println("Lua string as bytes without nul:", luaString.Bytes())
-	fmt.Println("Lua string as bytes with nul:", luaString.BytesWithNUL())
+	if luaString.Len() != len("Hello, Lua!") {
+		panic("Lua string length should be 12")
+	}
 	fmt.Printf("Lua string pointer: 0x%x\n", luaString.Pointer())
 	luaString.Close() // Clean up the Lua string when done
 	fmt.Println("Lua string as bytes after free (should be empty/nil): ", luaString.Bytes())
@@ -203,7 +205,6 @@ func main() {
 	}
 	fmt.Println("Lua empty string created successfully:", luaEmptyString)
 	fmt.Println("Lua empty string as bytes:", luaEmptyString.Bytes())
-	fmt.Println("Lua empty string as bytes with nul:", luaEmptyString.BytesWithNUL())
 	fmt.Printf("Lua empty string pointer: 0x%x\n", luaEmptyString.Pointer())
 	luaEmptyString.Close() // Clean up the Lua empty string when done
 	fmt.Println("Lua empty string as bytes after free (should be empty/nil):", luaEmptyString.Bytes())
